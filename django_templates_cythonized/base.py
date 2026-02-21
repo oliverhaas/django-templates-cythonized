@@ -1043,16 +1043,22 @@ class Variable:
 class Node:
     # Set this to True for nodes that must be first in the template (although
     # they can be preceded by text nodes.
+    # token and origin are C attributes declared in base.pxd when compiled.
+    # Provide Python-level defaults for pure-Python fallback.
+    if not cython.compiled:
+        token = None
+        origin = None
     must_be_first = False
     child_nodelists = ("nodelist",)
-    token = None
 
+    @cython.ccall
     def render(self, context):
         """
         Return the node rendered as a string.
         """
         pass
 
+    @cython.ccall
     def render_annotated(self, context):
         """
         Render the node. If debug is True and an exception occurs during
@@ -1079,6 +1085,7 @@ class Node:
                     )
             raise
 
+    @cython.ccall
     def get_nodes_by_type(self, nodetype):
         """
         Return a list of all nodes (within this node and its nodelist)
@@ -1119,9 +1126,11 @@ class TextNode(Node):
     def __repr__(self):
         return "<%s: %r>" % (self.__class__.__name__, self.s[:25])
 
+    @cython.ccall
     def render(self, context):
         return self.s
 
+    @cython.ccall
     def render_annotated(self, context):
         """
         Return the given value.
@@ -1164,6 +1173,7 @@ class VariableNode(Node):
     def __repr__(self):
         return "<Variable Node: %s>" % self.filter_expression
 
+    @cython.ccall
     def render(self, context):
         try:
             output = self.filter_expression.resolve(context)

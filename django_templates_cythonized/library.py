@@ -1,3 +1,4 @@
+import cython
 from collections.abc import Iterable
 from functools import wraps
 from importlib import import_module
@@ -6,7 +7,9 @@ from inspect import getfullargspec, unwrap
 from .html import conditional_escape
 from django.utils.inspect import lazy_annotations
 
-from .base import Node, Template, token_kwargs
+from cython.cimports.django_templates_cythonized.base import Node
+
+from .base import Template, token_kwargs
 from .exceptions import TemplateSyntaxError
 
 
@@ -292,6 +295,7 @@ class Library:
         return dec
 
 
+@cython.cclass
 class TagHelperNode(Node):
     """
     Base class for tag helper nodes such as SimpleNode and InclusionNode.
@@ -299,12 +303,18 @@ class TagHelperNode(Node):
     function.
     """
 
+    func = cython.declare(object, visibility='public')
+    takes_context = cython.declare(cython.bint, visibility='public')
+    args = cython.declare(list, visibility='public')
+    kwargs = cython.declare(dict, visibility='public')
+
     def __init__(self, func, takes_context, args, kwargs):
         self.func = func
         self.takes_context = takes_context
         self.args = args
         self.kwargs = kwargs
 
+    @cython.ccall
     def get_resolved_arguments(self, context):
         resolved_args = [var.resolve(context) for var in self.args]
         if self.takes_context:
@@ -313,13 +323,16 @@ class TagHelperNode(Node):
         return resolved_args, resolved_kwargs
 
 
+@cython.cclass
 class SimpleNode(TagHelperNode):
+    target_var = cython.declare(object, visibility='public')
     child_nodelists = ()
 
     def __init__(self, func, takes_context, args, kwargs, target_var):
         super().__init__(func, takes_context, args, kwargs)
         self.target_var = target_var
 
+    @cython.ccall
     def render(self, context):
         resolved_args, resolved_kwargs = self.get_resolved_arguments(context)
         output = self.func(*resolved_args, **resolved_kwargs)
@@ -331,11 +344,15 @@ class SimpleNode(TagHelperNode):
         return output
 
 
+@cython.cclass
 class SimpleBlockNode(SimpleNode):
+    nodelist = cython.declare(object, visibility='public')
+
     def __init__(self, nodelist, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.nodelist = nodelist
 
+    @cython.ccall
     def get_resolved_arguments(self, context):
         resolved_args, resolved_kwargs = super().get_resolved_arguments(context)
 
@@ -348,11 +365,15 @@ class SimpleBlockNode(SimpleNode):
         return resolved_args, resolved_kwargs
 
 
+@cython.cclass
 class InclusionNode(TagHelperNode):
+    filename = cython.declare(object, visibility='public')
+
     def __init__(self, func, takes_context, args, kwargs, filename):
         super().__init__(func, takes_context, args, kwargs)
         self.filename = filename
 
+    @cython.ccall
     def render(self, context):
         """
         Render the specified template and context. Cache the template object

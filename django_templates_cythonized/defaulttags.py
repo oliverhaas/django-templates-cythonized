@@ -20,6 +20,8 @@ from django.utils.lorem_ipsum import paragraphs, words
 from .html import conditional_escape, escape
 from .safestring import mark_safe
 
+from cython.cimports.django_templates_cythonized.base import Node
+
 from .base import (
     BLOCK_TAG_END,
     BLOCK_TAG_START,
@@ -31,7 +33,6 @@ from .base import (
     VARIABLE_ATTRIBUTE_SEPARATOR,
     VARIABLE_TAG_END,
     VARIABLE_TAG_START,
-    Node,
     NodeList,
     PartialTemplate,
     TemplateSyntaxError,
@@ -48,13 +49,18 @@ from .smartif import IfParser, Literal
 register = Library()
 
 
+@cython.cclass
 class AutoEscapeControlNode(Node):
     """Implement the actions of the autoescape tag."""
+
+    setting = cython.declare(cython.bint, visibility='public')
+    nodelist = cython.declare(object, visibility='public')
 
     def __init__(self, setting, nodelist):
         self.setting = setting
         self.nodelist = nodelist
 
+    @cython.ccall
     def render(self, context):
         old_setting = context.autoescape
         context.autoescape = self.setting
@@ -66,16 +72,20 @@ class AutoEscapeControlNode(Node):
             return output
 
 
+@cython.cclass
 class CommentNode(Node):
     child_nodelists = ()
 
+    @cython.ccall
     def render(self, context):
         return ""
 
 
+@cython.cclass
 class CsrfTokenNode(Node):
     child_nodelists = ()
 
+    @cython.ccall
     def render(self, context):
         csrf_token = context.get("csrf_token")
         if csrf_token:
@@ -98,12 +108,18 @@ class CsrfTokenNode(Node):
             return ""
 
 
+@cython.cclass
 class CycleNode(Node):
+    cyclevars = cython.declare(list, visibility='public')
+    variable_name = cython.declare(object, visibility='public')
+    silent = cython.declare(cython.bint, visibility='public')
+
     def __init__(self, cyclevars, variable_name=None, silent=False):
         self.cyclevars = cyclevars
         self.variable_name = variable_name
         self.silent = silent
 
+    @cython.ccall
     def render(self, context):
         if self not in context.render_context:
             # First time the node is rendered in template
@@ -123,7 +139,9 @@ class CycleNode(Node):
         context.render_context[self] = itertools_cycle(self.cyclevars)
 
 
+@cython.cclass
 class DebugNode(Node):
+    @cython.ccall
     def render(self, context):
         if not settings.DEBUG:
             return ""
@@ -136,11 +154,16 @@ class DebugNode(Node):
         return "".join(output)
 
 
+@cython.cclass
 class FilterNode(Node):
+    filter_expr = cython.declare(object, visibility='public')
+    nodelist = cython.declare(object, visibility='public')
+
     def __init__(self, filter_expr, nodelist):
         self.filter_expr = filter_expr
         self.nodelist = nodelist
 
+    @cython.ccall
     def render(self, context):
         output = self.nodelist.render(context)
         # Apply filters.
@@ -148,11 +171,16 @@ class FilterNode(Node):
             return self.filter_expr.resolve(context)
 
 
+@cython.cclass
 class FirstOfNode(Node):
+    vars = cython.declare(list, visibility='public')
+    asvar = cython.declare(object, visibility='public')
+
     def __init__(self, variables, asvar=None):
         self.vars = variables
         self.asvar = asvar
 
+    @cython.ccall
     def render(self, context):
         first = ""
         for var in self.vars:
@@ -166,7 +194,13 @@ class FirstOfNode(Node):
         return first
 
 
+@cython.cclass
 class ForNode(Node):
+    loopvars = cython.declare(list, visibility='public')
+    sequence = cython.declare(object, visibility='public')
+    is_reversed = cython.declare(cython.bint, visibility='public')
+    nodelist_loop = cython.declare(object, visibility='public')
+    nodelist_empty = cython.declare(object, visibility='public')
     child_nodelists = ("nodelist_loop", "nodelist_empty")
 
     def __init__(
@@ -191,6 +225,7 @@ class ForNode(Node):
             reversed_text,
         )
 
+    @cython.ccall
     def render(self, context):
         i: cython.int
         len_values: cython.int
@@ -265,7 +300,11 @@ class ForNode(Node):
         return mark_safe("".join(nodelist))
 
 
+@cython.cclass
 class IfChangedNode(Node):
+    nodelist_true = cython.declare(object, visibility='public')
+    nodelist_false = cython.declare(object, visibility='public')
+    _varlist = cython.declare(tuple, visibility='public')
     child_nodelists = ("nodelist_true", "nodelist_false")
 
     def __init__(self, nodelist_true, nodelist_false, *varlist):
@@ -273,6 +312,7 @@ class IfChangedNode(Node):
         self.nodelist_false = nodelist_false
         self._varlist = varlist
 
+    @cython.ccall
     def render(self, context):
         # Init state storage
         state_frame = self._get_context_stack_frame(context)
@@ -313,7 +353,10 @@ class IfChangedNode(Node):
             return context.render_context
 
 
+@cython.cclass
 class IfNode(Node):
+    conditions_nodelists = cython.declare(list, visibility='public')
+
     def __init__(self, conditions_nodelists):
         self.conditions_nodelists = conditions_nodelists
 
@@ -328,6 +371,7 @@ class IfNode(Node):
     def nodelist(self):
         return NodeList(self)
 
+    @cython.ccall
     def render(self, context):
         match: object
         for condition, nodelist in self.conditions_nodelists:
@@ -345,12 +389,18 @@ class IfNode(Node):
         return ""
 
 
+@cython.cclass
 class LoremNode(Node):
+    count = cython.declare(object, visibility='public')
+    method = cython.declare(object, visibility='public')
+    common = cython.declare(cython.bint, visibility='public')
+
     def __init__(self, count, method, common):
         self.count = count
         self.method = method
         self.common = common
 
+    @cython.ccall
     def render(self, context):
         try:
             count = int(self.count.resolve(context))
@@ -368,7 +418,12 @@ class LoremNode(Node):
 GroupedResult = namedtuple("GroupedResult", ["grouper", "list"])
 
 
+@cython.cclass
 class RegroupNode(Node):
+    target = cython.declare(object, visibility='public')
+    expression = cython.declare(object, visibility='public')
+    var_name = cython.declare(object, visibility='public')
+
     def __init__(self, target, expression, var_name):
         self.target = target
         self.expression = expression
@@ -380,6 +435,16 @@ class RegroupNode(Node):
         context[self.var_name] = obj
         return self.expression.resolve(context, ignore_failures=True)
 
+    def _group_objects(self, obj_list, context):
+        # Separate method because lambdas (closures) aren't allowed in cpdef.
+        return [
+            GroupedResult(grouper=key, list=list(val))
+            for key, val in groupby(
+                obj_list, lambda obj: self.resolve_expression(obj, context)
+            )
+        ]
+
+    @cython.ccall
     def render(self, context):
         obj_list = self.target.resolve(context, ignore_failures=True)
         if obj_list is None:
@@ -388,27 +453,29 @@ class RegroupNode(Node):
             return ""
         # List of dictionaries in the format:
         # {'grouper': 'key', 'list': [list of contents]}.
-        context[self.var_name] = [
-            GroupedResult(grouper=key, list=list(val))
-            for key, val in groupby(
-                obj_list, lambda obj: self.resolve_expression(obj, context)
-            )
-        ]
+        context[self.var_name] = self._group_objects(obj_list, context)
         return ""
 
 
+@cython.cclass
 class LoadNode(Node):
     child_nodelists = ()
 
+    @cython.ccall
     def render(self, context):
         return ""
 
 
+@cython.cclass
 class NowNode(Node):
+    format_string = cython.declare(object, visibility='public')
+    asvar = cython.declare(object, visibility='public')
+
     def __init__(self, format_string, asvar=None):
         self.format_string = format_string
         self.asvar = asvar
 
+    @cython.ccall
     def render(self, context):
         tzinfo = timezone.get_current_timezone() if settings.USE_TZ else None
         formatted = date(datetime.now(tz=tzinfo), self.format_string)
@@ -420,22 +487,33 @@ class NowNode(Node):
             return formatted
 
 
+@cython.cclass
 class PartialDefNode(Node):
+    partial_name = cython.declare(object, visibility='public')
+    inline = cython.declare(cython.bint, visibility='public')
+    nodelist = cython.declare(object, visibility='public')
+
     def __init__(self, partial_name, inline, nodelist):
         self.partial_name = partial_name
         self.inline = inline
         self.nodelist = nodelist
 
+    @cython.ccall
     def render(self, context):
         return self.nodelist.render(context) if self.inline else ""
 
 
+@cython.cclass
 class PartialNode(Node):
+    partial_name = cython.declare(object, visibility='public')
+    partial_mapping = cython.declare(object, visibility='public')
+
     def __init__(self, partial_name, partial_mapping):
         # Defer lookup in `partial_mapping` and nodelist to runtime.
         self.partial_name = partial_name
         self.partial_mapping = partial_mapping
 
+    @cython.ccall
     def render(self, context):
         try:
             return self.partial_mapping[self.partial_name].render(context)
@@ -445,26 +523,36 @@ class PartialNode(Node):
             )
 
 
+@cython.cclass
 class ResetCycleNode(Node):
+    node = cython.declare(object, visibility='public')
+
     def __init__(self, node):
         self.node = node
 
+    @cython.ccall
     def render(self, context):
         self.node.reset(context)
         return ""
 
 
+@cython.cclass
 class SpacelessNode(Node):
+    nodelist = cython.declare(object, visibility='public')
+
     def __init__(self, nodelist):
         self.nodelist = nodelist
 
+    @cython.ccall
     def render(self, context):
         from django.utils.html import strip_spaces_between_tags
 
         return strip_spaces_between_tags(self.nodelist.render(context).strip())
 
 
+@cython.cclass
 class TemplateTagNode(Node):
+    tagtype = cython.declare(object, visibility='public')
     mapping = {
         "openblock": BLOCK_TAG_START,
         "closeblock": BLOCK_TAG_END,
@@ -479,11 +567,17 @@ class TemplateTagNode(Node):
     def __init__(self, tagtype):
         self.tagtype = tagtype
 
+    @cython.ccall
     def render(self, context):
         return self.mapping.get(self.tagtype, "")
 
 
+@cython.cclass
 class URLNode(Node):
+    view_name = cython.declare(object, visibility='public')
+    args = cython.declare(list, visibility='public')
+    kwargs = cython.declare(dict, visibility='public')
+    asvar = cython.declare(object, visibility='public')
     child_nodelists = ()
 
     def __init__(self, view_name, args, kwargs, asvar):
@@ -501,6 +595,7 @@ class URLNode(Node):
             repr(self.asvar),
         )
 
+    @cython.ccall
     def render(self, context):
         from django.urls import NoReverseMatch, reverse
 
@@ -532,21 +627,32 @@ class URLNode(Node):
             return url
 
 
+@cython.cclass
 class VerbatimNode(Node):
+    content = cython.declare(object, visibility='public')
+
     def __init__(self, content):
         self.content = content
 
+    @cython.ccall
     def render(self, context):
         return self.content
 
 
+@cython.cclass
 class WidthRatioNode(Node):
+    val_expr = cython.declare(object, visibility='public')
+    max_expr = cython.declare(object, visibility='public')
+    max_width = cython.declare(object, visibility='public')
+    asvar = cython.declare(object, visibility='public')
+
     def __init__(self, val_expr, max_expr, max_width, asvar=None):
         self.val_expr = val_expr
         self.max_expr = max_expr
         self.max_width = max_width
         self.asvar = asvar
 
+    @cython.ccall
     def render(self, context):
         try:
             value = self.val_expr.resolve(context)
@@ -573,7 +679,11 @@ class WidthRatioNode(Node):
             return result
 
 
+@cython.cclass
 class WithNode(Node):
+    nodelist = cython.declare(object, visibility='public')
+    extra_context = cython.declare(dict, visibility='public')
+
     def __init__(self, var, name, nodelist, extra_context=None):
         self.nodelist = nodelist
         # var and name are legacy attributes, being left in case they are used
@@ -585,6 +695,7 @@ class WithNode(Node):
     def __repr__(self):
         return "<%s>" % self.__class__.__name__
 
+    @cython.ccall
     def render(self, context):
         values = {key: val.resolve(context) for key, val in self.extra_context.items()}
         with context.push(**values):

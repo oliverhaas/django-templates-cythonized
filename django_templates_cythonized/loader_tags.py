@@ -1,9 +1,12 @@
+import cython
 import posixpath
 from collections import defaultdict
 
 from .safestring import mark_safe
 
-from .base import Node, Template, TemplateSyntaxError, TextNode, Variable, token_kwargs
+from cython.cimports.django_templates_cythonized.base import Node
+
+from .base import Template, TemplateSyntaxError, TextNode, Variable, token_kwargs
 from .library import Library
 
 register = Library()
@@ -39,7 +42,13 @@ class BlockContext:
             return None
 
 
+@cython.cclass
 class BlockNode(Node):
+    name = cython.declare(object, visibility='public')
+    nodelist = cython.declare(object, visibility='public')
+    parent = cython.declare(object, visibility='public')
+    context = cython.declare(object, visibility='public')
+
     def __init__(self, name, nodelist, parent=None):
         self.name = name
         self.nodelist = nodelist
@@ -48,6 +57,7 @@ class BlockNode(Node):
     def __repr__(self):
         return "<Block Node: %s. Contents: %r>" % (self.name, self.nodelist)
 
+    @cython.ccall
     def render(self, context):
         block_context = context.render_context.get(BLOCK_CONTEXT_KEY)
         with context.push():
@@ -69,7 +79,7 @@ class BlockNode(Node):
         return result
 
     def super(self):
-        if not hasattr(self, "context"):
+        if self.context is None:
             raise TemplateSyntaxError(
                 "'%s' object has no attribute 'context'. Did you use "
                 "{{ block.super }} in a base template?" % self.__class__.__name__
@@ -83,7 +93,12 @@ class BlockNode(Node):
         return ""
 
 
+@cython.cclass
 class ExtendsNode(Node):
+    nodelist = cython.declare(object, visibility='public')
+    parent_name = cython.declare(object, visibility='public')
+    template_dirs = cython.declare(object, visibility='public')
+    blocks = cython.declare(dict, visibility='public')
     must_be_first = True
     context_key = "extends_context"
 
@@ -131,6 +146,7 @@ class ExtendsNode(Node):
             return parent.template
         return self.find_template(parent, context)
 
+    @cython.ccall
     def render(self, context):
         compiled_parent = self.get_parent(context)
 
@@ -160,7 +176,11 @@ class ExtendsNode(Node):
             return compiled_parent._render(context)
 
 
+@cython.cclass
 class IncludeNode(Node):
+    template = cython.declare(object, visibility='public')
+    extra_context = cython.declare(dict, visibility='public')
+    isolated_context = cython.declare(cython.bint, visibility='public')
     context_key = "__include_context"
 
     def __init__(
@@ -174,6 +194,7 @@ class IncludeNode(Node):
     def __repr__(self):
         return f"<{self.__class__.__qualname__}: template={self.template!r}>"
 
+    @cython.ccall
     def render(self, context):
         """
         Render the specified template and context. Cache the template object
