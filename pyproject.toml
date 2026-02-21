@@ -1,0 +1,132 @@
+[project]
+name = "django-templates-cythonized"
+version = "0.1.0a1"
+description = "Cython-accelerated Django template engine"
+readme = "README.md"
+license = "BSD-3-Clause"
+requires-python = ">=3.12"
+keywords = ["django", "templates", "cython", "performance"]
+authors = [{ name = "Oliver Haas", email = "ohaas@e1plus.de" }]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Environment :: Web Environment",
+  "Framework :: Django",
+  "Framework :: Django :: 5.2",
+  "Framework :: Django :: 6.0",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: BSD License",
+  "Operating System :: OS Independent",
+  "Programming Language :: Cython",
+  "Programming Language :: Python",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
+  "Topic :: Internet :: WWW/HTTP",
+  "Topic :: Software Development :: Libraries",
+  "Typing :: Typed",
+]
+dependencies = ["Django>=5.2,<7"]
+
+[project.urls]
+Homepage = "https://github.com/oliverhaas/django-templates-cythonized"
+Documentation = "https://oliverhaas.github.io/django-templates-cythonized/"
+Repository = "https://github.com/oliverhaas/django-templates-cythonized.git"
+Changelog = "https://oliverhaas.github.io/django-templates-cythonized/reference/changelog/"
+
+[build-system]
+requires = ["setuptools>=74.1", "Cython>=3.0"]
+build-backend = "setuptools.build_meta"
+
+[dependency-groups]
+dev = [
+  "Cython>=3.0",
+  "mypy>=1.15",
+  "pre-commit>=4",
+  "pytest>=8",
+  "pytest-codspeed>=3",
+  "pytest-cov>=6",
+  "pytest-django>=4.10",
+  "ruff>=0.11",
+]
+docs = ["mkdocs>=1.6", "mkdocs-material>=9", "mike>=2"]
+
+[tool.setuptools.packages.find]
+include = ["django_templates_cythonized*"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 120
+fix = true
+
+[tool.ruff.lint]
+select = ["ALL"]
+ignore = [
+  "COM812", # Conflicts with ruff-format
+  "D",      # Docstrings - Django source doesn't follow our style
+  "E501",   # Line length handled by config
+  "EM",     # Exception strings inline are fine
+  "FBT",    # Boolean params match Django's API
+  "PLR0913", # Too many args - Django's existing API
+  "PLR2004", # Magic values from Django source
+  "SLF001", # Private member access needed for Django internals
+  "TRY003", # Long exception messages are helpful for debugging
+  "TRY300", # return in try block is cleaner for some patterns
+  "SIM108", # Ternary not always clearer
+]
+
+[tool.ruff.lint.flake8-annotations]
+allow-star-arg-any = true
+suppress-none-returning = true
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = [
+  "ANN",    # Type annotations not required in tests
+  "ARG",    # Unused arguments common in fixtures
+  "F841",   # Unused variables okay in tests
+  "FBT",    # Boolean args fine in test fixtures and test calls
+  "PT006",  # Parametrize tuple style is preference
+  "PT011",  # Broad pytest.raises okay in some tests
+  "PT013",  # pytest import style is preference
+  "PT018",  # Compound assertions okay in tests
+  "S101",   # assert in tests
+  "S105",   # Hardcoded passwords in test settings
+]
+# Django source code - be lenient with linting
+"django_templates_cythonized/base.py" = ["ALL"]
+"django_templates_cythonized/context.py" = ["ALL"]
+"django_templates_cythonized/defaulttags.py" = ["ALL"]
+"django_templates_cythonized/defaultfilters.py" = ["ALL"]
+"django_templates_cythonized/loader_tags.py" = ["ALL"]
+"django_templates_cythonized/smartif.py" = ["ALL"]
+"django_templates_cythonized/library.py" = ["ALL"]
+"django_templates_cythonized/engine.py" = ["ALL"]
+"django_templates_cythonized/exceptions.py" = ["ALL"]
+"django_templates_cythonized/utils.py" = ["ALL"]
+"django_templates_cythonized/autoreload.py" = ["ALL"]
+"django_templates_cythonized/response.py" = ["ALL"]
+"django_templates_cythonized/loaders/*.py" = ["ALL"]
+
+[tool.mypy]
+python_version = "3.12"
+pretty = true
+show_error_codes = true
+show_error_context = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_unreachable = false
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "tests.settings"
+addopts = "--cov=django_templates_cythonized --cov-report=term-missing --no-cov-on-fail"
+pythonpath = ["tests"]
+testpaths = ["tests"]
+xfail_strict = true
+
+[tool.coverage.run]
+omit = ["tests/*"]
+
+[tool.coverage.report]
+precision = 2
+skip_covered = true
