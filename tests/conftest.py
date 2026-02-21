@@ -1,3 +1,11 @@
+import os
+
+os.environ.setdefault("DJANGO_SETTINGS_MODULE", "tests.settings")
+
+import django
+
+django.setup()
+
 import pytest
 from django.template import engines
 

@@ -40,14 +40,13 @@ build-backend = "setuptools.build_meta"
 
 [dependency-groups]
 dev = [
-  "Cython>=3.0",
-  "mypy>=1.15",
-  "pre-commit>=4",
-  "pytest>=8",
-  "pytest-codspeed>=3",
-  "pytest-cov>=6",
-  "pytest-django>=4.10",
-  "ruff>=0.11",
+  "Cython==3.2.4",
+  "mypy==1.19.1",
+  "pre-commit==4.5.1",
+  "pytest==9.0.2",
+  "pytest-codspeed==4.3.0",
+  "pytest-cov==7.0.0",
+  "ruff==0.15.2",
 ]
 docs = ["mkdocs>=1.6", "mkdocs-material>=9", "mike>=2"]
 
@@ -92,7 +91,7 @@ suppress-none-returning = true
   "S101",   # assert in tests
   "S105",   # Hardcoded passwords in test settings
 ]
-# Django source code - be lenient with linting
+# Django source code - be lenient with linting for now
 "django_templates_cythonized/base.py" = ["ALL"]
 "django_templates_cythonized/context.py" = ["ALL"]
 "django_templates_cythonized/defaulttags.py" = ["ALL"]
@@ -117,7 +116,6 @@ warn_unused_ignores = true
 warn_unreachable = false
 
 [tool.pytest.ini_options]
-DJANGO_SETTINGS_MODULE = "tests.settings"
 addopts = "--cov=django_templates_cythonized --cov-report=term-missing --no-cov-on-fail"
 pythonpath = ["."]
 testpaths = ["tests"]
