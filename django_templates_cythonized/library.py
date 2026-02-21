@@ -3,7 +3,7 @@ from functools import wraps
 from importlib import import_module
 from inspect import getfullargspec, unwrap
 
-from django.utils.html import conditional_escape
+from .html import conditional_escape
 from django.utils.inspect import lazy_annotations
 
 from .base import Node, Template, token_kwargs

@@ -1,7 +1,7 @@
 import posixpath
 from collections import defaultdict
 
-from django.utils.safestring import mark_safe
+from .safestring import mark_safe
 
 from .base import Node, Template, TemplateSyntaxError, TextNode, Variable, token_kwargs
 from .library import Library

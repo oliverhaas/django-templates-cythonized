@@ -14,9 +14,11 @@ from django.conf import settings
 from django.http import QueryDict
 from django.utils import timezone
 from django.utils.datastructures import DeferredSubDict
-from django.utils.html import conditional_escape, escape, format_html
+from django.utils.html import format_html
 from django.utils.lorem_ipsum import paragraphs, words
-from django.utils.safestring import mark_safe
+
+from .html import conditional_escape, escape
+from .safestring import mark_safe
 
 from .base import (
     BLOCK_TAG_END,

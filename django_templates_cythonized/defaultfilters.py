@@ -13,11 +13,13 @@ from urllib.parse import quote
 from django.utils import formats
 from django.utils.dateformat import format, time_format
 from django.utils.encoding import iri_to_uri
-from django.utils.html import avoid_wrapping, conditional_escape, escape, escapejs
+from django.utils.html import avoid_wrapping, escapejs
 from django.utils.html import json_script as _json_script
 from django.utils.html import linebreaks, strip_tags
 from django.utils.html import urlize as _urlize
-from django.utils.safestring import SafeData, mark_safe
+
+from .html import conditional_escape, escape
+from .safestring import SafeData, mark_safe
 from django.utils.text import Truncator, normalize_newlines, phone2numeric
 from django.utils.text import slugify as _slugify
 from django.utils.text import wrap

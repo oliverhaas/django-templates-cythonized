@@ -58,14 +58,14 @@ import warnings
 from enum import Enum
 
 from .context import BaseContext
+from .formats import localize
+from .html import conditional_escape
+from .safestring import SafeData, SafeString, mark_safe
+from .timezone import template_localtime
 from django.utils.deprecation import django_file_prefixes
-from django.utils.formats import localize
-from django.utils.html import conditional_escape
 from django.utils.inspect import lazy_annotations
 from django.utils.regex_helper import _lazy_re_compile
-from django.utils.safestring import SafeData, SafeString, mark_safe
 from django.utils.text import get_text_list, smart_split, unescape_string_literal
-from django.utils.timezone import template_localtime
 from django.utils.translation import gettext_lazy, pgettext_lazy
 
 from .exceptions import TemplateSyntaxError
@@ -772,7 +772,13 @@ class FilterExpression:
                     args.append((True, Variable(var_arg)))
                 filter_func = parser.find_filter(filter_name)
                 self.args_check(filter_name, filter_func, args)
-                filters.append((filter_func, args))
+                filters.append((
+                    filter_func,
+                    args,
+                    getattr(filter_func, "expects_localtime", False),
+                    getattr(filter_func, "needs_autoescape", False),
+                    getattr(filter_func, "is_safe", False),
+                ))
             upto = match.end()
         if upto != len(token):
             raise TemplateSyntaxError(
@@ -803,20 +809,20 @@ class FilterExpression:
                         obj = string_if_invalid
         else:
             obj = self.var
-        for func, args in self.filters:
+        for func, args, expects_localtime, needs_autoescape, is_safe in self.filters:
             arg_vals = []
             for lookup, arg in args:
                 if not lookup:
                     arg_vals.append(mark_safe(arg))
                 else:
                     arg_vals.append(arg.resolve(context))
-            if getattr(func, "expects_localtime", False):
+            if expects_localtime:
                 obj = template_localtime(obj, context.use_tz)
-            if getattr(func, "needs_autoescape", False):
+            if needs_autoescape:
                 new_obj = func(obj, autoescape=context.autoescape, *arg_vals)
             else:
                 new_obj = func(obj, *arg_vals)
-            if getattr(func, "is_safe", False) and isinstance(obj, SafeData):
+            if is_safe and isinstance(obj, SafeData):
                 obj = mark_safe(new_obj)
             else:
                 obj = new_obj
