@@ -50,6 +50,7 @@ times with multiple contexts)
 '<html></html>'
 """
 
+import cython
 import inspect
 import logging
 import re
@@ -719,6 +720,7 @@ filter_raw_string = r"""
 filter_re = _lazy_re_compile(filter_raw_string, re.VERBOSE)
 
 
+@cython.cclass
 class FilterExpression:
     """
     Parse a variable token and its optional filters (all as a single string),
@@ -734,7 +736,7 @@ class FilterExpression:
         <Variable: 'variable'>
     """
 
-    __slots__ = ("token", "filters", "var", "is_var")
+    cython.declare(token=object, filters=list, var=object, is_var=cython.bint)
 
     def __init__(self, token, parser):
         self.token = token
@@ -782,6 +784,7 @@ class FilterExpression:
         self.var = var_obj
         self.is_var = isinstance(var_obj, Variable)
 
+    @cython.ccall
     def resolve(self, context, ignore_failures=False):
         if self.is_var:
             try:
@@ -819,6 +822,7 @@ class FilterExpression:
                 obj = new_obj
         return obj
 
+    @staticmethod
     def args_check(name, func, provided):
         provided = list(provided)
         # First argument, filter input, is implied.
@@ -838,8 +842,6 @@ class FilterExpression:
 
         return True
 
-    args_check = staticmethod(args_check)
-
     def __str__(self):
         return self.token
 
@@ -847,6 +849,7 @@ class FilterExpression:
         return "<%s %r>" % (self.__class__.__qualname__, self.token)
 
 
+@cython.cclass
 class Variable:
     """
     A template variable, resolvable against a given context. The variable may
@@ -866,7 +869,8 @@ class Variable:
     (The example assumes VARIABLE_ATTRIBUTE_SEPARATOR is '.')
     """
 
-    __slots__ = ("var", "literal", "lookups", "translate", "message_context")
+    cython.declare(var=object, literal=object, lookups=object,
+                   translate=cython.bint, message_context=object)
 
     def __init__(self, var):
         self.var = var
@@ -921,6 +925,7 @@ class Variable:
                         )
                 self.lookups = tuple(var.split(VARIABLE_ATTRIBUTE_SEPARATOR))
 
+    @cython.ccall
     def resolve(self, context):
         """Resolve this variable against a given context."""
         if self.lookups is not None:
@@ -945,6 +950,7 @@ class Variable:
     def __str__(self):
         return self.var
 
+    @cython.cfunc
     def _resolve_lookup(self, context):
         """
         Perform resolution of a real variable (i.e. not a literal) against the
@@ -954,7 +960,7 @@ class Variable:
         detail and shouldn't be called by external code. Use Variable.resolve()
         instead.
         """
-        current = context
+        current: object = context
         try:  # catch-all for silent variable failures
             for bit in self.lookups:
                 try:  # dictionary lookup
@@ -1120,6 +1126,7 @@ class TextNode(Node):
         return self.s
 
 
+@cython.ccall
 def render_value_in_context(value, context):
     """
     Convert any value to a string to become part of a rendered template. This

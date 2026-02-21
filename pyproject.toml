@@ -30,9 +30,7 @@ dependencies = ["Django>=5.2,<7"]
 
 [project.urls]
 Homepage = "https://github.com/oliverhaas/django-templates-cythonized"
-Documentation = "https://oliverhaas.github.io/django-templates-cythonized/"
 Repository = "https://github.com/oliverhaas/django-templates-cythonized.git"
-Changelog = "https://oliverhaas.github.io/django-templates-cythonized/reference/changelog/"
 
 [build-system]
 requires = ["setuptools>=74.1", "Cython>=3.0"]
@@ -48,7 +46,6 @@ dev = [
   "pytest-cov==7.0.0",
   "ruff==0.15.2",
 ]
-docs = ["mkdocs>=1.6", "mkdocs-material>=9", "mike>=2"]
 
 [tool.setuptools.packages.find]
 include = ["django_templates_cythonized*"]

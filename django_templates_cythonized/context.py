@@ -1,3 +1,4 @@
+import cython
 from contextlib import contextmanager
 from copy import copy
 
@@ -73,8 +74,11 @@ class BaseContext:
         Set a variable in one of the higher contexts if it exists there,
         otherwise in the current context.
         """
+        i: cython.int
         context = self.dicts[-1]
-        for d in reversed(self.dicts):
+        dicts = self.dicts
+        for i in range(len(dicts) - 1, -1, -1):
+            d = dicts[i]
             if key in d:
                 context = d
                 break
@@ -85,7 +89,10 @@ class BaseContext:
         Get a variable's value, starting at the current context and going
         upward
         """
-        for d in reversed(self.dicts):
+        i: cython.int
+        dicts = self.dicts
+        for i in range(len(dicts) - 1, -1, -1):
+            d: dict = dicts[i]
             if key in d:
                 return d[key]
         raise KeyError(key)
@@ -95,10 +102,18 @@ class BaseContext:
         del self.dicts[-1][key]
 
     def __contains__(self, key):
-        return any(key in d for d in self.dicts)
+        i: cython.int
+        dicts = self.dicts
+        for i in range(len(dicts)):
+            if key in dicts[i]:
+                return True
+        return False
 
     def get(self, key, otherwise=None):
-        for d in reversed(self.dicts):
+        i: cython.int
+        dicts = self.dicts
+        for i in range(len(dicts) - 1, -1, -1):
+            d: dict = dicts[i]
             if key in d:
                 return d[key]
         return otherwise

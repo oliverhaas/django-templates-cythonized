@@ -1,5 +1,6 @@
 """Default tags used by the template system, available to all templates."""
 
+import cython
 import re
 import sys
 import warnings
@@ -189,6 +190,12 @@ class ForNode(Node):
         )
 
     def render(self, context):
+        i: cython.int
+        len_values: cython.int
+        num_loopvars: cython.int
+        unpack: cython.bint
+        pop_context: cython.bint
+
         if "forloop" in context:
             parentloop = context["forloop"]
         else:
@@ -320,6 +327,7 @@ class IfNode(Node):
         return NodeList(self)
 
     def render(self, context):
+        match: object
         for condition, nodelist in self.conditions_nodelists:
             if condition is not None:  # if / elif clause
                 try:
