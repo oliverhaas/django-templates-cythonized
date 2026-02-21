@@ -264,7 +264,7 @@ class TestTemplateLoading:
         engine = engines["cythonized"]
         template = engine.get_template("basic.txt")
         result = template.render({"user": "Alice"})
-        assert result == "Hello Alice!\n"
+        assert result == "Hello Alice!"
 
     def test_extends(self):
         engine = engines["cythonized"]

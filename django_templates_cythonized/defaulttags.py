@@ -1218,20 +1218,22 @@ def partialdef_func(parser, token):
     The optional ``inline`` argument renders the partial's contents
     immediately, at the point where it is defined.
     """
-    match token.split_contents():
-        case "partialdef", partial_name, "inline":
-            inline = True
-        case "partialdef", partial_name, _:
-            raise TemplateSyntaxError(
-                "The 'inline' argument does not have any parameters; either use "
-                "'inline' or remove it completely."
-            )
-        case "partialdef", partial_name:
-            inline = False
-        case ["partialdef"]:
-            raise TemplateSyntaxError("'partialdef' tag requires a name")
-        case _:
-            raise TemplateSyntaxError("'partialdef' tag takes at most 2 arguments")
+    bits = token.split_contents()
+    if len(bits) == 3 and bits[2] == "inline":
+        partial_name = bits[1]
+        inline = True
+    elif len(bits) == 3:
+        raise TemplateSyntaxError(
+            "The 'inline' argument does not have any parameters; either use "
+            "'inline' or remove it completely."
+        )
+    elif len(bits) == 2:
+        partial_name = bits[1]
+        inline = False
+    elif len(bits) == 1:
+        raise TemplateSyntaxError("'partialdef' tag requires a name")
+    else:
+        raise TemplateSyntaxError("'partialdef' tag takes at most 2 arguments")
 
     # Parse the content until the end tag.
     valid_endpartials = ("endpartialdef", f"endpartialdef {partial_name}")
@@ -1274,13 +1276,14 @@ def partial_func(parser, token):
 
         {% partial partial_name %}
     """
-    match token.split_contents():
-        case "partial", partial_name:
-            extra_data = parser.extra_data
-            partial_mapping = DeferredSubDict(extra_data, "partials")
-            return PartialNode(partial_name, partial_mapping=partial_mapping)
-        case _:
-            raise TemplateSyntaxError("'partial' tag requires a single argument")
+    bits = token.split_contents()
+    if len(bits) == 2:
+        partial_name = bits[1]
+        extra_data = parser.extra_data
+        partial_mapping = DeferredSubDict(extra_data, "partials")
+        return PartialNode(partial_name, partial_mapping=partial_mapping)
+    else:
+        raise TemplateSyntaxError("'partial' tag requires a single argument")
 
 
 @register.simple_tag(name="querystring", takes_context=True)

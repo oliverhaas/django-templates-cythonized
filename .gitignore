@@ -34,4 +34,5 @@ site/
 # Cython build artifacts
 *.so
 *.c
-*.html
+django_templates_cythonized/*.html
+django_templates_cythonized/loaders/*.html
