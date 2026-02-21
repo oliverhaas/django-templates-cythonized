@@ -5,6 +5,20 @@ from copy import copy
 # Hard-coded processor for easier use of CSRF protection.
 _builtin_context_processors = ("django.template.context_processors.csrf",)
 
+# Sentinel for missing context lookups.
+_MISSING = object()
+
+
+@cython.cfunc
+def _context_lookup(dicts: list, key):
+    """C-level reverse dict scan — no Python frame overhead."""
+    i: cython.int
+    for i in range(len(dicts) - 1, -1, -1):
+        d: dict = dicts[i]
+        if key in d:
+            return d[key]
+    return _MISSING
+
 
 class ContextPopException(Exception):
     "pop() has been called more times than push()"
@@ -89,34 +103,23 @@ class BaseContext:
         Get a variable's value, starting at the current context and going
         upward
         """
-        i: cython.int
-        dicts = self.dicts
-        for i in range(len(dicts) - 1, -1, -1):
-            d: dict = dicts[i]
-            if key in d:
-                return d[key]
-        raise KeyError(key)
+        result = _context_lookup(self.dicts, key)
+        if result is _MISSING:
+            raise KeyError(key)
+        return result
 
     def __delitem__(self, key):
         "Delete a variable from the current context"
         del self.dicts[-1][key]
 
     def __contains__(self, key):
-        i: cython.int
-        dicts = self.dicts
-        for i in range(len(dicts)):
-            if key in dicts[i]:
-                return True
-        return False
+        return _context_lookup(self.dicts, key) is not _MISSING
 
     def get(self, key, otherwise=None):
-        i: cython.int
-        dicts = self.dicts
-        for i in range(len(dicts) - 1, -1, -1):
-            d: dict = dicts[i]
-            if key in d:
-                return d[key]
-        return otherwise
+        result = _context_lookup(self.dicts, key)
+        if result is _MISSING:
+            return otherwise
+        return result
 
     def setdefault(self, key, default=None):
         try:

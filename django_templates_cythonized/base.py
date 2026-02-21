@@ -1139,6 +1139,12 @@ def render_value_in_context(value, context):
     means escaping, if required, and conversion to a string. If value is a
     string, it's expected to already be translated.
     """
+    # Fast path: strings skip template_localtime (not datetime) and
+    # localize (returns strings unchanged). This is the common case.
+    if isinstance(value, str):
+        if context.autoescape:
+            return conditional_escape(value)
+        return value
     value = template_localtime(value, use_tz=context.use_tz)
     value = localize(value, use_l10n=context.use_l10n)
     if context.autoescape:

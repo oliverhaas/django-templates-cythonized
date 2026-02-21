@@ -5,7 +5,6 @@ import re
 import types
 from decimal import ROUND_HALF_UP, Context, Decimal, InvalidOperation, getcontext
 from functools import wraps
-from inspect import unwrap
 from operator import itemgetter
 from pprint import pformat
 from urllib.parse import quote
@@ -47,7 +46,7 @@ def stringfilter(func):
     def _dec(first, *args, **kwargs):
         first = str(first)
         result = func(first, *args, **kwargs)
-        if isinstance(first, SafeData) and getattr(unwrap(func), "is_safe", False):
+        if isinstance(first, SafeData) and getattr(func, "is_safe", False):
             result = mark_safe(result)
         return result
 

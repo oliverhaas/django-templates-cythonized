@@ -9,6 +9,7 @@ setup(
             "language_level": "3",
             "boundscheck": False,
             "wraparound": True,
+            "infer_types": True,
         },
     ),
 )
