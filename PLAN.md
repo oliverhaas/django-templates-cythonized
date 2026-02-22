@@ -290,3 +290,176 @@ README should be clear about:
 3. `uv run pytest tests/benchmarks/` runs and shows timing comparison
 4. `cython -a django_templates_cythonized/base.py` generates annotation HTML
 5. Django test project with `BACKEND = "django_templates_cythonized.backend.CythonizedTemplates"` renders pages correctly
+
+---
+
+## Public API Surface Analysis
+
+Everything below documents what **must stay Python-compatible** (because user/third-party code touches it) versus what is **purely internal** (can be full C structs, cdef functions, etc.).
+
+### Boundary 1: Template Rendering (user calls)
+
+Users call `template.render(context)` where context is a `dict`, `Context`, or `RequestContext`. The `Engine.from_string()` and `Engine.get_template()` methods return `Template` objects. This is the outer shell — it must accept Python objects.
+
+**Must stay Python:**
+- `Template.render(context)` — accepts dict or Context
+- `Engine.from_string(string)` → Template
+- `Engine.get_template(name)` → Template
+- `Context(dict)`, `RequestContext(request, dict)` constructors
+
+### Boundary 2: Context Protocol (custom tags read/write context)
+
+Custom tags receive `context` in `render(self, context)` and call:
+
+```python
+context["key"]              # __getitem__ — lookup variable
+context["key"] = value      # __setitem__ — set variable
+context.get("key")          # get with default
+key in context              # __contains__
+context.push()              # push new scope (returns context manager)
+context.pop()               # pop scope
+context.update(other_dict)  # push dict onto stack
+context.flatten()           # merge all dicts
+context.autoescape          # bool flag
+context.use_l10n            # localization flag
+context.use_tz              # timezone flag
+context.template            # current Template being rendered
+context.render_context       # RenderContext for tag-local state storage
+context.dicts               # the internal list[dict] stack (some tags touch this)
+```
+
+**Implication:** BaseContext can't be a cclass (push uses `*args/**kwargs`, user-subclassed via RequestContext). The `dicts` attribute is a Python `list[dict]` and must remain so — user code and third-party tags may iterate it.
+
+### Boundary 3: Custom Template Tags (user writes)
+
+Users subclass `Node` and implement `render(self, context)`:
+
+```python
+class MyNode(Node):
+    child_nodelists = ("nodelist",)  # declares which attrs are NodeLists
+
+    def __init__(self, nodelist, expression):
+        self.nodelist = nodelist
+        self.expression = expression  # FilterExpression
+
+    def render(self, context):
+        value = self.expression.resolve(context)
+        output = self.nodelist.render(context)
+        return f"<div>{value}{output}</div>"
+```
+
+Compile function receives parser + token:
+
+```python
+@register.tag("my_tag")
+def do_my_tag(parser, token):
+    bits = token.split_contents()          # list[str]
+    expr = parser.compile_filter(bits[1])  # FilterExpression
+    nodelist = parser.parse(("endmy_tag",))
+    parser.delete_first_token()
+    return MyNode(nodelist, expr)
+```
+
+**Must stay Python:**
+- `Node` base class (subclassed by user code)
+- `Node.render(context)` signature
+- `Node.child_nodelists` tuple (framework iterates it for `get_nodes_by_type`)
+- `Node.token`, `Node.origin` (set by framework, read for error reporting)
+- `FilterExpression.resolve(context)` — returns resolved value
+- `parser.compile_filter(string)` → FilterExpression
+- `token.split_contents()` → list[str]
+- `token_kwargs(bits, parser)` → dict
+- `NodeList.render(context)` — renders child nodes to string
+- `Library` class: `.tag()`, `.filter()`, `.simple_tag()`, `.inclusion_tag()`
+
+### Boundary 4: Custom Template Filters (user writes)
+
+```python
+@register.filter(is_safe=True)
+def my_filter(value, arg=None):
+    return str(value) + str(arg)
+
+@register.filter(needs_autoescape=True)
+def my_filter2(value, autoescape=True):
+    if autoescape:
+        value = conditional_escape(value)
+    return mark_safe(f"<b>{value}</b>")
+```
+
+**Must stay Python:**
+- `@register.filter()` decorator with flags: `is_safe`, `needs_autoescape`, `expects_localtime`
+- Filter function signature: `(value)` or `(value, arg)` or with `autoescape=` kwarg
+- `@stringfilter` decorator (wraps filter to auto-convert to str, preserve SafeData)
+
+### Boundary 5: Variable Resolution Protocol (user objects in context)
+
+When a template does `{{ object.attr.method }}`, Variable._resolve_lookup tries, in order:
+
+1. `object[attr]` — `__getitem__`
+2. `getattr(object, attr)` — attribute access
+3. `object[int(attr)]` — integer index
+
+If the result is callable:
+- `do_not_call_in_templates = True` → don't call, return as-is
+- `alters_data = True` → return `string_if_invalid`
+- Otherwise → call with no args
+
+**Must stay Python:** This entire protocol operates on arbitrary user Python objects. Can't be replaced with C structs.
+
+### Boundary 6: forloop Object (CForloopContext)
+
+Template code accesses `{{ forloop.counter }}`, which goes through `Variable._resolve_lookup` calling `context["forloop"]["counter"]`. Custom tags inside loops may also access `context["forloop"]`.
+
+`CForloopContext` is already a cclass (C struct for `_i`, `_length`) with Python `__getitem__` for the dict-like interface. IfChangedNode stores state on it via `forloop[self] = compare_to` and `forloop.setdefault(self)`.
+
+**Must stay Python-compatible:**
+- `__getitem__(key)` for standard keys (counter, counter0, revcounter, revcounter0, first, last, length, parentloop)
+- `__setitem__(key, value)` for arbitrary state storage (IfChangedNode)
+- `__contains__(key)` for `in` checks
+- `setdefault(key, default)` for IfChangedNode state init
+
+**Can be C:** The internal `_i`, `_length`, `_parentloop` fields. The `_extra` dict is only created lazily when `__setitem__` is called with a non-standard key.
+
+### Summary: What's Internal (Can Be Full C)
+
+| Component | Status | Why |
+|-----------|--------|-----|
+| `_render_var_fast()` | **Internal** | Only called by NodeList.render / ForNode.render |
+| `_render_var_with_value()` | **Internal** | Only called by ForNode ultra-fast loop |
+| `_fe_is_direct_loopvar()` | **Internal** | Only called by ForNode pre-scan |
+| `_resolve_fe_raw()` | **Internal** | Only called by TemplateLiteral.eval |
+| `_fast_escape()` | **Internal** | Only called by _render_var_fast |
+| `_context_lookup()` | **Internal** | Only called by BaseContext methods |
+| `Variable._resolve_lookup()` | **Internal** | Only called by Variable.resolve |
+| `Variable.lookups`, `.translate`, `.literal` | **Internal** | Never accessed by user code |
+| `FilterExpression.filters` tuple | **Internal** | Users only call `.resolve()` |
+| `FilterExpression._fast_filter` | **Internal** | C-level filter dispatch code |
+| `CForloopContext._i`, `._length` | **Internal** | C ints, only accessed by ForNode |
+| `NodeList._nodes` list | **Semi-internal** | Advanced third-party code may access |
+| `TextNode.s` | **Internal** | Framework-only access |
+| `VariableNode.filter_expression` | **Semi-internal** | Advanced third-party code may access |
+| ForNode inner render loop | **Internal** | Entirely framework code |
+
+### What This Means for Further Optimization
+
+The hot loop in ForNode is 100% internal code. On each iteration:
+
+1. `loop_ctx._i = i` — already C int assignment
+2. `top[loopvar0] = item` — **Python dict write** (skipped in ultra-fast path)
+3. For each VariableNode: scan `context.dicts` — **Python dict lookups** (skipped in ultra-fast path)
+4. String escaping — `_fast_escape` already does C-level char scanning
+5. `"".join(nodelist)` — unavoidable Python string join
+
+After Phase 11 (direct loopvar bypass), the remaining per-iteration overhead in the ultra-fast loop path is:
+
+- `enumerate(values)` — Python iterator protocol on user-provided iterable
+- `isinstance(inner_node, TextNode)` — C-level type check (fast)
+- `_render_var_with_value(fe, item, context)` — cdef function, fast
+  - Inside: `isinstance(value, str)`, `context.autoescape` access, `_fast_escape(value)`
+- List assignment `nodelist[idx] = result` — C-level list setitem (fast)
+
+The remaining Python overhead is:
+- **`enumerate(values)`** — iterating user-provided list. Can't avoid Python iterator protocol since `values` comes from user context.
+- **`context.autoescape` access** — Python attribute access on BaseContext (not a cclass). Could be cached once before the loop.
+- **`render_value_in_context(item, context)` for non-string items** — calls `localize()` and `template_localtime()`. Only hit for non-string values (ints, datetimes, etc.).
+- **`"".join(nodelist)`** — final string concatenation. Unavoidable.

@@ -14,7 +14,10 @@ register = Library()
 BLOCK_CONTEXT_KEY = "block_context"
 
 
+@cython.cclass
 class BlockContext:
+    blocks = cython.declare(object, visibility='public')
+
     def __init__(self):
         # Dictionary of FIFO queues.
         self.blocks = defaultdict(list)
@@ -22,19 +25,23 @@ class BlockContext:
     def __repr__(self):
         return f"<{self.__class__.__qualname__}: blocks={self.blocks!r}>"
 
+    @cython.ccall
     def add_blocks(self, blocks):
         for name, block in blocks.items():
             self.blocks[name].insert(0, block)
 
+    @cython.ccall
     def pop(self, name):
         try:
             return self.blocks[name].pop()
         except IndexError:
             return None
 
+    @cython.ccall
     def push(self, name, block):
         self.blocks[name].append(block)
 
+    @cython.ccall
     def get_block(self, name):
         try:
             return self.blocks[name][-1]
@@ -78,6 +85,7 @@ class BlockNode(Node):
                     block_context.push(self.name, push)
         return result
 
+    @cython.ccall
     def super(self):
         if self.context is None:
             raise TemplateSyntaxError(
@@ -111,6 +119,7 @@ class ExtendsNode(Node):
     def __repr__(self):
         return "<%s: extends %s>" % (self.__class__.__name__, self.parent_name.token)
 
+    @cython.ccall
     def find_template(self, template_name, context):
         """
         This is a wrapper around engine.find_template(). A history is kept in
@@ -129,6 +138,7 @@ class ExtendsNode(Node):
         history.append(origin)
         return template
 
+    @cython.ccall
     def get_parent(self, context):
         parent = self.parent_name.resolve(context)
         if not parent:
@@ -172,8 +182,15 @@ class ExtendsNode(Node):
 
         # Call Template._render explicitly so the parser context stays
         # the same.
-        with context.render_context.push_state(compiled_parent, isolated_context=False):
+        # Inline push_state(compiled_parent, isolated_context=False):
+        # no push/pop needed, just set/restore template.
+        rc = context.render_context
+        _rc_initial = rc.template
+        rc.template = compiled_parent
+        try:
             return compiled_parent._render(context)
+        finally:
+            rc.template = _rc_initial
 
 
 @cython.cclass

@@ -85,7 +85,7 @@ class Library:
         elif name is not None and filter_func is not None:
             # register.filter('somename', somefunc)
             self.filters[name] = filter_func
-            for attr in ("expects_localtime", "is_safe", "needs_autoescape"):
+            for attr in ("expects_localtime", "is_safe", "needs_autoescape", "_cython_fast_code"):
                 if attr in flags:
                     value = flags[attr]
                     # set the flag on the filter for FilterExpression.resolve

@@ -8,7 +8,12 @@ import pytest
 
 @pytest.fixture
 def loop_context():
-    return {"items": list(range(1000))}
+    return {
+        "products": [
+            {"id": i, "name": f"Product {i}", "desc": f"A really nice product, you should buy product number {i}"}
+            for i in range(1000)
+        ]
+    }
 
 
 @pytest.fixture
@@ -32,7 +37,9 @@ def if_context():
 @pytest.mark.benchmark(group="loop")
 def test_cythonized_loop(benchmark, cythonized_engine, loop_context):
     template = cythonized_engine.from_string(
-        "{% for item in items %}{{ item }}{% endfor %}"
+        "{% for p in products %}"
+        "<div>#{{ p.id }} {{ p.name }}: {{ p.desc }}</div>"
+        "{% endfor %}"
     )
     benchmark(template.render, loop_context)
 
@@ -73,7 +80,9 @@ def test_cythonized_plain_text(benchmark, cythonized_engine):
 @pytest.mark.benchmark(group="loop")
 def test_stock_loop(benchmark, stock_engine, loop_context):
     template = stock_engine.from_string(
-        "{% for item in items %}{{ item }}{% endfor %}"
+        "{% for p in products %}"
+        "<div>#{{ p.id }} {{ p.name }}: {{ p.desc }}</div>"
+        "{% endfor %}"
     )
     benchmark(template.render, loop_context)
 

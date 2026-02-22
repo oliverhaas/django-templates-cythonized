@@ -18,9 +18,10 @@ from django.utils.html import format_html
 from django.utils.lorem_ipsum import paragraphs, words
 
 from .html import conditional_escape, escape
-from .safestring import mark_safe
+from .safestring import SafeString, mark_safe
 
-from cython.cimports.django_templates_cythonized.base import Node
+from cython.cimports.django_templates_cythonized.base import Node, TextNode, NodeList, VariableNode, FilterExpression, _render_var_fast, _fe_is_direct_loopvar, _render_var_with_value, _resolve_fe_raw
+from cython.cimports.django_templates_cythonized.smartif import Literal
 
 from .base import (
     BLOCK_TAG_END,
@@ -37,6 +38,7 @@ from .base import (
     PartialTemplate,
     TemplateSyntaxError,
     VariableDoesNotExist,
+    _RESOLVE_FALLBACK,
     kwarg_re,
     render_value_in_context,
     token_kwargs,
@@ -132,6 +134,7 @@ class CycleNode(Node):
             return ""
         return render_value_in_context(value, context)
 
+    @cython.ccall
     def reset(self, context):
         """
         Reset the cycle iteration back to the beginning.
@@ -195,6 +198,65 @@ class FirstOfNode(Node):
 
 
 @cython.cclass
+class CForloopContext:
+    """C-level forloop struct. Stores only (i, length) as C ints and computes
+    counter/revcounter/first/last on demand via __getitem__. Replaces the
+    plain dict that Django writes 6 keys to on every loop iteration."""
+
+    _i = cython.declare(cython.Py_ssize_t, visibility='public')
+    _length = cython.declare(cython.Py_ssize_t, visibility='public')
+    _parentloop = cython.declare(object, visibility='public')
+    _extra = cython.declare(dict, visibility='public')
+
+    def __init__(self, length, parentloop):
+        self._i = 0
+        self._length = length
+        self._parentloop = parentloop
+        self._extra = None
+
+    def __getitem__(self, key):
+        if key == "counter0":
+            return self._i
+        if key == "counter":
+            return self._i + 1
+        if key == "revcounter":
+            return self._length - self._i
+        if key == "revcounter0":
+            return self._length - self._i - 1
+        if key == "first":
+            return self._i == 0
+        if key == "last":
+            return self._i == self._length - 1
+        if key == "length":
+            return self._length
+        if key == "parentloop":
+            return self._parentloop
+        if self._extra is not None:
+            return self._extra[key]
+        raise KeyError(key)
+
+    def __setitem__(self, key, value):
+        if self._extra is None:
+            self._extra = {}
+        self._extra[key] = value
+
+    def __contains__(self, key):
+        if isinstance(key, str) and key in (
+            "counter0", "counter", "revcounter", "revcounter0",
+            "first", "last", "length", "parentloop",
+        ):
+            return True
+        return self._extra is not None and key in self._extra
+
+    def setdefault(self, key, default=None):
+        try:
+            return self[key]
+        except KeyError:
+            self[key] = default
+            return default
+
+
+@cython.cclass
 class ForNode(Node):
     loopvars = cython.declare(list, visibility='public')
     sequence = cython.declare(object, visibility='public')
@@ -225,19 +287,27 @@ class ForNode(Node):
             reversed_text,
         )
 
+    @cython.wraparound(False)
     @cython.ccall
     def render(self, context):
         i: cython.int
+        j: cython.Py_ssize_t
+        idx: cython.Py_ssize_t
         len_values: cython.int
         num_loopvars: cython.int
+        num_nodes: cython.Py_ssize_t
         unpack: cython.bint
         pop_context: cython.bint
+        debug: cython.bint
+        needs_ctx_write: cython.bint
 
         if "forloop" in context:
             parentloop = context["forloop"]
         else:
             parentloop = {}
-        with context.push():
+        # Inline context.push() — plain dict append avoids ContextDict overhead.
+        context.dicts.append({})
+        try:
             values = self.sequence.resolve(context, ignore_failures=True)
             if values is None:
                 values = []
@@ -246,58 +316,115 @@ class ForNode(Node):
             len_values = len(values)
             if len_values < 1:
                 return self.nodelist_empty.render(context)
-            nodelist = []
             if self.is_reversed:
                 values = reversed(values)
             num_loopvars = len(self.loopvars)
             unpack = num_loopvars > 1
-            # Create a forloop value in the context. We'll update counters on
-            # each iteration just below.
-            loop_dict = context["forloop"] = {
-                "parentloop": parentloop,
-                "length": len_values,
-            }
-            for i, item in enumerate(values):
-                # Shortcuts for current loop iteration number.
-                loop_dict["counter0"] = i
-                loop_dict["counter"] = i + 1
-                # Reverse counter iteration numbers.
-                loop_dict["revcounter"] = len_values - i
-                loop_dict["revcounter0"] = len_values - i - 1
-                # Boolean values designating first and last times through loop.
-                loop_dict["first"] = i == 0
-                loop_dict["last"] = i == len_values - 1
+            # Pre-extract loop nodes for C-level iteration
+            loop_nodes: list = self.nodelist_loop._nodes
+            num_nodes = len(loop_nodes)
+            # Pre-allocate output list
+            nodelist: list = [None] * (len_values * num_nodes)
+            idx = 0
+            # Check debug once
+            tmpl = context.template
+            debug = tmpl is not None and tmpl.engine.debug
+            # Cache top context dict for fast single-variable assignment
+            _dicts = context.dicts
+            top = _dicts[len(_dicts) - 1]
+            loopvar0 = self.loopvars[0] if not unpack else None
 
-                pop_context = False
-                if unpack:
-                    # If there are multiple loop variables, unpack the item
-                    # into them.
-                    try:
-                        len_item = len(item)
-                    except TypeError:  # not an iterable
-                        len_item = 1
-                    # Check loop variable count before unpacking
-                    if num_loopvars != len_item:
-                        raise ValueError(
-                            "Need {} values to unpack in for loop; got {}. ".format(
-                                num_loopvars, len_item
-                            ),
-                        )
-                    unpacked_vars = dict(zip(self.loopvars, item))
-                    pop_context = True
-                    context.update(unpacked_vars)
-                else:
-                    context[self.loopvars[0]] = item
+            # Pre-scan loop body: check if we can bypass context writes entirely.
+            # Possible when all non-TextNode nodes are simple VariableNodes that
+            # directly reference the loop variable (single-segment, no translate,
+            # eligible filters). Saves the dict write + dict scan round-trip.
+            needs_ctx_write = True
+            if not unpack and not debug:
+                needs_ctx_write = False
+                for j in range(num_nodes):
+                    nd = loop_nodes[j]
+                    if isinstance(nd, TextNode):
+                        continue
+                    if isinstance(nd, VariableNode):
+                        if _fe_is_direct_loopvar(nd.filter_expression, loopvar0):
+                            continue
+                    needs_ctx_write = True
+                    break
 
-                for node in self.nodelist_loop:
-                    nodelist.append(node.render_annotated(context))
+            # Create forloop context. CForloopContext computes
+            # counter/revcounter/first/last on demand — no dict writes per iteration.
+            loop_ctx: CForloopContext = CForloopContext(len_values, parentloop)
+            context["forloop"] = loop_ctx
 
-                if pop_context:
-                    # Pop the loop variables pushed on to the context to avoid
-                    # the context ending up in an inconsistent state when other
-                    # tags (e.g., include and with) push data to context.
-                    context.pop()
-        return mark_safe("".join(nodelist))
+            if not needs_ctx_write:
+                # ULTRA-FAST LOOP: no context writes needed.
+                # All non-TextNode nodes are direct loopvar VariableNodes.
+                # Pass item value directly via _render_var_with_value, bypassing
+                # the dict write + dict scan round-trip entirely.
+                for i, item in enumerate(values):
+                    loop_ctx._i = i
+                    for j in range(num_nodes):
+                        inner_node = loop_nodes[j]
+                        if isinstance(inner_node, TextNode):
+                            nodelist[idx] = inner_node.s
+                        else:
+                            nodelist[idx] = _render_var_with_value(
+                                inner_node.filter_expression, item, context
+                            )
+                        idx += 1
+            else:
+                for i, item in enumerate(values):
+                    loop_ctx._i = i
+
+                    pop_context = False
+                    if unpack:
+                        # If there are multiple loop variables, unpack the item
+                        # into them.
+                        try:
+                            len_item = len(item)
+                        except TypeError:  # not an iterable
+                            len_item = 1
+                        # Check loop variable count before unpacking
+                        if num_loopvars != len_item:
+                            raise ValueError(
+                                "Need {} values to unpack in for loop; got {}. ".format(
+                                    num_loopvars, len_item
+                                ),
+                            )
+                        unpacked_vars = dict(zip(self.loopvars, item))
+                        pop_context = True
+                        context.update(unpacked_vars)
+                    else:
+                        top[loopvar0] = item
+
+                    # Inlined render loop with TextNode + VariableNode fast-paths
+                    if not debug:
+                        for j in range(num_nodes):
+                            inner_node = loop_nodes[j]
+                            if isinstance(inner_node, TextNode):
+                                nodelist[idx] = inner_node.s
+                            elif isinstance(inner_node, VariableNode):
+                                result = _render_var_fast(inner_node.filter_expression, context)
+                                if result is not None:
+                                    nodelist[idx] = result
+                                else:
+                                    nodelist[idx] = inner_node.render(context)
+                            else:
+                                nodelist[idx] = inner_node.render(context)
+                            idx += 1
+                    else:
+                        for j in range(num_nodes):
+                            nodelist[idx] = loop_nodes[j].render_annotated(context)
+                            idx += 1
+
+                    if pop_context:
+                        # Pop the loop variables pushed on to the context to avoid
+                        # the context ending up in an inconsistent state when other
+                        # tags (e.g., include and with) push data to context.
+                        context.pop()
+        finally:
+            context.dicts.pop()
+        return SafeString("".join(nodelist))
 
 
 @cython.cclass
@@ -338,6 +465,7 @@ class IfChangedNode(Node):
             return self.nodelist_false.render(context)
         return ""
 
+    @cython.ccall
     def _get_context_stack_frame(self, context):
         # The Context object behaves like a stack where each template tag can
         # create a new scope. Find the place where to store the state to detect
@@ -374,7 +502,19 @@ class IfNode(Node):
     @cython.ccall
     def render(self, context):
         match: object
-        for condition, nodelist in self.conditions_nodelists:
+        conditions_nodelists = self.conditions_nodelists
+        # Fast path: single {% if %} with no elif/else (the common case).
+        if len(conditions_nodelists) == 1:
+            condition, nodelist = conditions_nodelists[0]
+            try:
+                match = condition.eval(context)
+            except VariableDoesNotExist:
+                match = None
+            if match:
+                return nodelist.render(context)
+            return ""
+
+        for condition, nodelist in conditions_nodelists:
             if condition is not None:  # if / elif clause
                 try:
                     match = condition.eval(context)
@@ -429,6 +569,7 @@ class RegroupNode(Node):
         self.expression = expression
         self.var_name = var_name
 
+    @cython.ccall
     def resolve_expression(self, obj, context):
         # This method is called for each object in self.target. See regroup()
         # for the reason why we temporarily put the object in the context.
@@ -1027,15 +1168,26 @@ def do_for(parser, token):
     return ForNode(loopvars, sequence, is_reversed, nodelist_loop, nodelist_empty)
 
 
+@cython.cclass
 class TemplateLiteral(Literal):
+    text = cython.declare(object, visibility='public')
+
     def __init__(self, value, text):
         self.value = value
         self.text = text  # for better error messages
+        self.id = "literal"
+        self.lbp = 0
+        self.first = None
+        self.second = None
 
     def display(self):
         return self.text
 
+    @cython.ccall
     def eval(self, context):
+        result = _resolve_fe_raw(self.value, context)
+        if result is not _RESOLVE_FALLBACK:
+            return result
         return self.value.resolve(context, ignore_failures=True)
 
 

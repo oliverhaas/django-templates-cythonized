@@ -2,12 +2,32 @@
 Parser and utilities for the smart 'if' tag
 """
 
+import cython
+
 # Using a simple top down parser, as described here:
 # https://11l-lang.org/archive/simple-top-down-parsing/
 # 'led' = left denotation
 # 'nud' = null denotation
 # 'bp' = binding power (left = lbp, right = rbp)
 
+# Op codes for the unified Operator cclass.
+OP_OR: cython.int = 0
+OP_AND: cython.int = 1
+OP_NOT: cython.int = 2
+OP_IN: cython.int = 3
+OP_NOT_IN: cython.int = 4
+OP_IS: cython.int = 5
+OP_IS_NOT: cython.int = 6
+OP_EQ: cython.int = 7
+OP_NE: cython.int = 8
+OP_GT: cython.int = 9
+OP_GE: cython.int = 10
+OP_LT: cython.int = 11
+OP_LE: cython.int = 12
+
+
+# TokenBase, Operator, Literal, EndToken are declared as cdef classes
+# in smartif.pxd. Do NOT use @cython.cclass or cython.declare() here.
 
 class TokenBase:
     """
@@ -15,9 +35,16 @@ class TokenBase:
     throwing syntax errors.
     """
 
-    id = None  # node/token type name
-    value = None  # used by literals
-    first = second = None  # used by tree nodes
+    if not cython.compiled:
+        id = None
+        lbp = 0
+        first = None
+        second = None
+        value = None
+
+    @cython.ccall
+    def eval(self, context):
+        return None
 
     def nud(self, parser):
         # Null denotation - called in prefix context
@@ -42,78 +69,75 @@ class TokenBase:
         return "(" + " ".join(out) + ")"
 
 
-def infix(bp, func):
-    """
-    Create an infix operator, given a binding power and a function that
-    evaluates the node.
-    """
+class Operator(TokenBase):
+    """Unified operator node replacing all infix/prefix factory classes."""
 
-    class Operator(TokenBase):
-        lbp = bp
+    if not cython.compiled:
+        op_code = 0
+        is_prefix = False
 
-        def led(self, left, parser):
-            self.first = left
-            self.second = parser.expression(bp)
-            return self
+    def __init__(self, op_code, lbp, op_id, is_prefix=False):
+        self.op_code = op_code
+        self.lbp = lbp
+        self.id = op_id
+        self.is_prefix = is_prefix
+        self.first = None
+        self.second = None
+        self.value = None
 
-        def eval(self, context):
-            try:
-                return func(context, self.first, self.second)
-            except Exception:
-                # Templates shouldn't throw exceptions when rendering. We are
-                # most likely to get exceptions for things like:
-                # {% if foo in bar %}
-                # where 'bar' does not support 'in', so default to False.
-                return False
-
-    return Operator
-
-
-def prefix(bp, func):
-    """
-    Create a prefix operator, given a binding power and a function that
-    evaluates the node.
-    """
-
-    class Operator(TokenBase):
-        lbp = bp
-
-        def nud(self, parser):
-            self.first = parser.expression(bp)
+    def nud(self, parser):
+        if self.is_prefix:
+            self.first = parser.expression(self.lbp)
             self.second = None
             return self
+        raise parser.error_class(
+            "Not expecting '%s' in this position in if tag." % self.id
+        )
 
-        def eval(self, context):
-            try:
-                return func(context, self.first)
-            except Exception:
-                return False
+    def led(self, left, parser):
+        if not self.is_prefix:
+            self.first = left
+            self.second = parser.expression(self.lbp)
+            return self
+        raise parser.error_class(
+            "Not expecting '%s' as infix operator in if tag." % self.id
+        )
 
-    return Operator
-
-
-# Operator precedence follows Python.
-# We defer variable evaluation to the lambda to ensure that terms are
-# lazily evaluated using Python's boolean parsing logic.
-OPERATORS = {
-    "or": infix(6, lambda context, x, y: x.eval(context) or y.eval(context)),
-    "and": infix(7, lambda context, x, y: x.eval(context) and y.eval(context)),
-    "not": prefix(8, lambda context, x: not x.eval(context)),
-    "in": infix(9, lambda context, x, y: x.eval(context) in y.eval(context)),
-    "not in": infix(9, lambda context, x, y: x.eval(context) not in y.eval(context)),
-    "is": infix(10, lambda context, x, y: x.eval(context) is y.eval(context)),
-    "is not": infix(10, lambda context, x, y: x.eval(context) is not y.eval(context)),
-    "==": infix(10, lambda context, x, y: x.eval(context) == y.eval(context)),
-    "!=": infix(10, lambda context, x, y: x.eval(context) != y.eval(context)),
-    ">": infix(10, lambda context, x, y: x.eval(context) > y.eval(context)),
-    ">=": infix(10, lambda context, x, y: x.eval(context) >= y.eval(context)),
-    "<": infix(10, lambda context, x, y: x.eval(context) < y.eval(context)),
-    "<=": infix(10, lambda context, x, y: x.eval(context) <= y.eval(context)),
-}
-
-# Assign 'id' to each:
-for key, op in OPERATORS.items():
-    op.id = key
+    @cython.ccall
+    def eval(self, context):
+        op: cython.int = self.op_code
+        try:
+            if op == OP_OR:
+                left = self.first.eval(context)
+                return left if left else self.second.eval(context)
+            elif op == OP_AND:
+                left = self.first.eval(context)
+                return self.second.eval(context) if left else left
+            elif op == OP_NOT:
+                return not self.first.eval(context)
+            elif op == OP_IN:
+                return self.first.eval(context) in self.second.eval(context)
+            elif op == OP_NOT_IN:
+                return self.first.eval(context) not in self.second.eval(context)
+            elif op == OP_IS:
+                return self.first.eval(context) is self.second.eval(context)
+            elif op == OP_IS_NOT:
+                return self.first.eval(context) is not self.second.eval(context)
+            elif op == OP_EQ:
+                return self.first.eval(context) == self.second.eval(context)
+            elif op == OP_NE:
+                return self.first.eval(context) != self.second.eval(context)
+            elif op == OP_GT:
+                return self.first.eval(context) > self.second.eval(context)
+            elif op == OP_GE:
+                return self.first.eval(context) >= self.second.eval(context)
+            elif op == OP_LT:
+                return self.first.eval(context) < self.second.eval(context)
+            elif op == OP_LE:
+                return self.first.eval(context) <= self.second.eval(context)
+        except Exception:
+            return False
+        return False
 
 
 class Literal(TokenBase):
@@ -124,11 +148,13 @@ class Literal(TokenBase):
     # IfParser uses Literal in create_var, but TemplateIfParser overrides
     # create_var so that a proper implementation that actually resolves
     # variables, filters etc. is used.
-    id = "literal"
-    lbp = 0
 
     def __init__(self, value):
+        self.id = "literal"
+        self.lbp = 0
         self.value = value
+        self.first = None
+        self.second = None
 
     def display(self):
         return repr(self.value)
@@ -136,6 +162,7 @@ class Literal(TokenBase):
     def nud(self, parser):
         return self
 
+    @cython.ccall
     def eval(self, context):
         return self.value
 
@@ -144,13 +171,36 @@ class Literal(TokenBase):
 
 
 class EndToken(TokenBase):
-    lbp = 0
+    def __init__(self):
+        self.lbp = 0
+        self.id = None
+        self.first = None
+        self.second = None
+        self.value = None
 
     def nud(self, parser):
         raise parser.error_class("Unexpected end of expression in if tag.")
 
 
-EndToken = EndToken()
+_end_token = EndToken()
+
+
+# Operator precedence follows Python.
+OPERATORS = {
+    "or": lambda: Operator(OP_OR, 6, "or"),
+    "and": lambda: Operator(OP_AND, 7, "and"),
+    "not": lambda: Operator(OP_NOT, 8, "not", is_prefix=True),
+    "in": lambda: Operator(OP_IN, 9, "in"),
+    "not in": lambda: Operator(OP_NOT_IN, 9, "not in"),
+    "is": lambda: Operator(OP_IS, 10, "is"),
+    "is not": lambda: Operator(OP_IS_NOT, 10, "is not"),
+    "==": lambda: Operator(OP_EQ, 10, "=="),
+    "!=": lambda: Operator(OP_NE, 10, "!="),
+    ">": lambda: Operator(OP_GT, 10, ">"),
+    ">=": lambda: Operator(OP_GE, 10, ">="),
+    "<": lambda: Operator(OP_LT, 10, "<"),
+    "<=": lambda: Operator(OP_LE, 10, "<="),
+}
 
 
 class IfParser:
@@ -186,7 +236,7 @@ class IfParser:
 
     def next_token(self):
         if self.pos >= len(self.tokens):
-            return EndToken
+            return _end_token
         else:
             retval = self.tokens[self.pos]
             self.pos += 1
@@ -195,7 +245,7 @@ class IfParser:
     def parse(self):
         retval = self.expression()
         # Check that we have exhausted all the tokens
-        if self.current_token is not EndToken:
+        if self.current_token is not _end_token:
             raise self.error_class(
                 "Unused '%s' at end of if expression." % self.current_token.display()
             )

@@ -1,5 +1,6 @@
 """Default variable filters."""
 
+import cython
 import random as random_module
 import re
 import types
@@ -25,7 +26,7 @@ from django.utils.text import wrap
 from django.utils.timesince import timesince, timeuntil
 from django.utils.translation import gettext, ngettext
 
-from .base import VARIABLE_ATTRIBUTE_SEPARATOR
+from .base import FFILTER_CAPFIRST, FFILTER_LOWER, FFILTER_UPPER, VARIABLE_ATTRIBUTE_SEPARATOR
 from .library import Library
 
 register = Library()
@@ -69,7 +70,7 @@ def addslashes(value):
     return value.replace("\\", "\\\\").replace('"', '\\"').replace("'", "\\'")
 
 
-@register.filter(is_safe=True)
+@register.filter(is_safe=True, _cython_fast_code=FFILTER_CAPFIRST)
 @stringfilter
 def capfirst(value):
     """Capitalize the first character of the value."""
@@ -245,7 +246,7 @@ def linenumbers(value, autoescape=True):
     return mark_safe("\n".join(lines))
 
 
-@register.filter(is_safe=True)
+@register.filter(is_safe=True, _cython_fast_code=FFILTER_LOWER)
 @stringfilter
 def lower(value):
     """Convert a string into all lowercase."""
@@ -356,7 +357,7 @@ def truncatewords_html(value, arg):
     return Truncator(value).words(length, html=True, truncate=" …")
 
 
-@register.filter(is_safe=False)
+@register.filter(is_safe=False, _cython_fast_code=FFILTER_UPPER)
 @stringfilter
 def upper(value):
     """Convert a string into all uppercase."""

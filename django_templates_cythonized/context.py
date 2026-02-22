@@ -9,12 +9,13 @@ _builtin_context_processors = ("django.template.context_processors.csrf",)
 _MISSING = object()
 
 
+@cython.wraparound(False)
 @cython.cfunc
 def _context_lookup(dicts: list, key):
     """C-level reverse dict scan — no Python frame overhead."""
     i: cython.int
     for i in range(len(dicts) - 1, -1, -1):
-        d: dict = dicts[i]
+        d = dicts[i]
         if key in d:
             return d[key]
     return _MISSING

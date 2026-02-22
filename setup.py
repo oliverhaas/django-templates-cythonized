@@ -9,7 +9,9 @@ setup(
             "language_level": "3",
             "boundscheck": False,
             "wraparound": True,
+            "cdivision": True,
             "infer_types": True,
+            "profile": False,
         },
     ),
 )

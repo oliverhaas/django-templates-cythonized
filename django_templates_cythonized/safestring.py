@@ -15,6 +15,10 @@ __all__ = ["SafeData", "SafeString", "mark_safe"]
 @cython.ccall
 def mark_safe(s):
     """Mark a string as safe for HTML output."""
+    if isinstance(s, SafeData):
+        return s
+    if isinstance(s, str):
+        return SafeString(s)
     if hasattr(s, "__html__"):
         return s
     return SafeString(s)
