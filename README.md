@@ -8,8 +8,10 @@ Cython-accelerated drop-in replacement for Django's template engine.
 
 Copies Django's template engine source and compiles it with Cython, then
 incrementally optimizes with type annotations, `.pxd` declarations, and C-level
-fast paths. Motivated by wanting to work with Cython again, and curious how far
-we can push it vs. [django-rusty-templates](https://github.com/romanroe/django-rusty-templates) (Rust).
+fast paths. Accelerates both the normal template renderer and the form renderer
+(via `CythonizedFormRenderer` which handles widget template rendering).
+Motivated by wanting to work with Cython again, and curious how far we can push
+it vs. [django-rusty-templates](https://github.com/romanroe/django-rusty-templates) (Rust).
 
 ## Benchmarks
 
