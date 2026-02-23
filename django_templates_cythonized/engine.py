@@ -61,6 +61,7 @@ class Engine:
         self.template_libraries = self.get_template_libraries(libraries)
         self.builtins = self.default_builtins + builtins
         self.template_builtins = self.get_template_builtins(self.builtins)
+        self._template_cache = {}
 
     def __repr__(self):
         return (
@@ -174,6 +175,10 @@ class Engine:
         Return a compiled Template object for the given template name,
         handling template inheritance recursively.
         """
+        cached = self._template_cache.get(template_name)
+        if cached is not None:
+            return cached
+
         original_name = template_name
         try:
             template_name, _, partial_name = template_name.partition("#")
@@ -188,17 +193,16 @@ class Engine:
             # template needs to be compiled
             template = Template(template, origin, template_name, engine=self)
 
-        if not partial_name:
-            return template
+        if partial_name:
+            extra_data = getattr(template, "extra_data", {})
+            try:
+                template = extra_data["partials"][partial_name]
+            except (KeyError, TypeError):
+                raise TemplateDoesNotExist(partial_name, tried=[template_name])
+            template.engine = self
 
-        extra_data = getattr(template, "extra_data", {})
-        try:
-            partial = extra_data["partials"][partial_name]
-        except (KeyError, TypeError):
-            raise TemplateDoesNotExist(partial_name, tried=[template_name])
-        partial.engine = self
-
-        return partial
+        self._template_cache[original_name] = template
+        return template
 
     def render_to_string(self, template_name, context=None):
         """

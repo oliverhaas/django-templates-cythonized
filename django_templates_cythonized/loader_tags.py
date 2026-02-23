@@ -221,31 +221,55 @@ class IncludeNode(Node):
         template = self.template.resolve(context)
         # Does this quack like a Template?
         if not callable(getattr(template, "render", None)):
-            # If not, try the cache and select_template().
-            template_name = template or ()
-            if isinstance(template_name, str):
-                template_name = (
-                    construct_relative_path(
-                        self.origin.template_name,
-                        template_name,
-                    ),
-                )
+            # Fast path: non-relative string name → Engine.get_template() (cached)
+            if isinstance(template, str):
+                if not template.startswith(("./", "../")):
+                    template = context.template.engine.get_template(template)
+                else:
+                    template_name = (
+                        construct_relative_path(
+                            self.origin.template_name,
+                            template,
+                        ),
+                    )
+                    cache = context.render_context.dicts[0].setdefault(self, {})
+                    template = cache.get(template_name)
+                    if template is None:
+                        template = context.template.engine.select_template(
+                            template_name
+                        )
+                        cache[template_name] = template
             else:
-                template_name = tuple(template_name)
-            cache = context.render_context.dicts[0].setdefault(self, {})
-            template = cache.get(template_name)
-            if template is None:
-                template = context.template.engine.select_template(template_name)
-                cache[template_name] = template
+                # List/tuple of template names — use render_context cache
+                template_name = tuple(template or ())
+                cache = context.render_context.dicts[0].setdefault(self, {})
+                template = cache.get(template_name)
+                if template is None:
+                    template = context.template.engine.select_template(
+                        template_name
+                    )
+                    cache[template_name] = template
         # Use the base.Template of a backends.django.Template.
         elif hasattr(template, "template"):
             template = template.template
-        values = {
-            name: var.resolve(context) for name, var in self.extra_context.items()
-        }
-        if self.isolated_context:
-            return template.render(context.new(values))
-        with context.push(**values):
+        extra_context = self.extra_context
+        if extra_context:
+            values = {
+                name: var.resolve(context)
+                for name, var in extra_context.items()
+            }
+            if self.isolated_context:
+                return template.render(context.new(values))
+            # Inline push/pop: plain dict avoids ContextDict + context manager
+            context.dicts.append(values)
+            try:
+                return template.render(context)
+            finally:
+                context.dicts.pop()
+        elif self.isolated_context:
+            return template.render(context.new({}))
+        else:
+            # No extra context, not isolated — render directly, no push/pop
             return template.render(context)
 
 

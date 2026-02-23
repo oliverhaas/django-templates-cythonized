@@ -393,7 +393,8 @@ class ForNode(Node):
                             )
                         unpacked_vars = dict(zip(self.loopvars, item))
                         pop_context = True
-                        context.update(unpacked_vars)
+                        # Inline push: plain dict avoids ContextDict overhead.
+                        _dicts.append(unpacked_vars)
                     else:
                         top[loopvar0] = item
 
@@ -418,10 +419,7 @@ class ForNode(Node):
                             idx += 1
 
                     if pop_context:
-                        # Pop the loop variables pushed on to the context to avoid
-                        # the context ending up in an inconsistent state when other
-                        # tags (e.g., include and with) push data to context.
-                        context.pop()
+                        _dicts.pop()
         finally:
             context.dicts.pop()
         return SafeString("".join(nodelist))

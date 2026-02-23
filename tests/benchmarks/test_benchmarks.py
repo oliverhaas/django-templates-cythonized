@@ -1,117 +1,201 @@
 """Benchmarks comparing cythonized vs stock Django template rendering.
 
-Run with: uv run pytest tests/benchmarks/ -v
+Run with: uv run pytest tests/benchmarks/ -v --no-cov -p no:codspeed
 """
 
 import pytest
+from django import forms
+
+from django_templates_cythonized.backend import CythonizedFormRenderer
 
 
-@pytest.fixture
-def loop_context():
-    return {
-        "products": [
-            {"id": i, "name": f"Product {i}", "desc": f"A really nice product, you should buy product number {i}"}
-            for i in range(1000)
-        ]
+class BookOrderForm(forms.Form):
+    quantity = forms.IntegerField(min_value=1, max_value=99, initial=1)
+    notes = forms.CharField(
+        required=False,
+        widget=forms.Textarea(attrs={"rows": 3, "placeholder": "Special instructions"}),
+    )
+    gift_wrap = forms.BooleanField(required=False)
+    shipping = forms.ChoiceField(choices=[
+        ("standard", "Standard"),
+        ("express", "Express"),
+        ("overnight", "Overnight"),
+    ])
+
+
+GENRES = ["fiction", "non-fiction", "science", "history", "biography"]
+AUTHORS = [
+    "Alice Smith", "Bob Jones", "Carol White",
+    "David Brown", "Eve Davis", "Frank Miller",
+]
+
+
+def _make_books(n):
+    return [
+        {
+            "id": i + 1,
+            "title": f"The Great Book of Everything Vol. {i + 1}",
+            "author": AUTHORS[i % len(AUTHORS)],
+            "year": 2000 + (i % 25),
+            "genre": GENRES[i % len(GENRES)],
+            "price": 9.99 + (i % 30),
+            "in_stock": i % 3 != 0,
+            "rating": (i % 5) + 1,
+            "description": f"A fascinating exploration of topics in volume {i + 1}.",
+        }
+        for i in range(n)
+    ]
+
+
+# Template WITHOUT form widgets — pure template engine workload.
+BOOKS_TEMPLATE = (
+    '<h1>{{ site_name }} — Book Catalog</h1>'
+    '<table class="catalog">'
+    "<thead><tr>"
+    "<th>#</th><th>Title</th><th>Author</th><th>Year</th>"
+    "<th>Genre</th><th>Price</th><th>Rating</th><th>Status</th>"
+    "</tr></thead>"
+    "<tbody>"
+    "{% for book in books %}"
+    '<tr class="{% cycle \'odd\' \'even\' %}">'
+    "<td>{{ forloop.counter }}</td>"
+    "<td>{{ book.title }}</td>"
+    "<td>{{ book.author }}</td>"
+    "<td>{{ book.year }}</td>"
+    "<td>{{ book.genre|capfirst }}</td>"
+    "<td>{{ currency }}{{ book.price }}</td>"
+    "<td>{% if book.rating == 5 %}★★★★★"
+    "{% elif book.rating == 4 %}★★★★"
+    "{% elif book.rating == 3 %}★★★"
+    "{% elif book.rating == 2 %}★★"
+    "{% else %}★{% endif %}</td>"
+    "<td>{% if book.in_stock %}"
+    '<span class="yes">In Stock</span>'
+    "{% else %}"
+    '<span class="no">Out of Stock</span>'
+    "{% endif %}</td>"
+    "</tr>"
+    "{% if show_description %}"
+    '<tr class="desc"><td colspan="8">{{ book.description }}</td></tr>'
+    "{% endif %}"
+    "{% endfor %}"
+    "</tbody></table>"
+    "<p>Showing {{ books|length }} books</p>"
+)
+
+# Template WITH form widgets per row — tests form rendering overhead.
+BOOKS_WITH_FORMS_TEMPLATE = (
+    '<h1>{{ site_name }} — Book Catalog</h1>'
+    '<table class="catalog">'
+    "<thead><tr>"
+    "<th>#</th><th>Title</th><th>Author</th><th>Year</th>"
+    "<th>Genre</th><th>Price</th><th>Rating</th><th>Status</th>"
+    "</tr></thead>"
+    "<tbody>"
+    "{% for book in books %}"
+    '<tr class="{% cycle \'odd\' \'even\' %}">'
+    "<td>{{ forloop.counter }}</td>"
+    "<td>{{ book.title }}</td>"
+    "<td>{{ book.author }}</td>"
+    "<td>{{ book.year }}</td>"
+    "<td>{{ book.genre|capfirst }}</td>"
+    "<td>{{ currency }}{{ book.price }}</td>"
+    "<td>{% if book.rating == 5 %}★★★★★"
+    "{% elif book.rating == 4 %}★★★★"
+    "{% elif book.rating == 3 %}★★★"
+    "{% elif book.rating == 2 %}★★"
+    "{% else %}★{% endif %}</td>"
+    "<td>{% if book.in_stock %}"
+    '<span class="yes">In Stock</span>'
+    "{% else %}"
+    '<span class="no">Out of Stock</span>'
+    "{% endif %}</td>"
+    "</tr>"
+    "{% if show_description %}"
+    '<tr class="desc"><td colspan="8">{{ book.description }}</td></tr>'
+    "{% endif %}"
+    '<tr class="modal-row" style="display:none">'
+    '<td colspan="8">'
+    '<div class="modal" id="order-modal-{{ book.id }}">'
+    "<h3>Order: {{ book.title }}</h3>"
+    '<form method="post" action="/order/{{ book.id }}/">'
+    '<div class="field">'
+    "<label>{{ order_form.quantity.label }}</label>"
+    "{{ order_form.quantity }}"
+    "</div>"
+    '<div class="field">'
+    "<label>{{ order_form.notes.label }}</label>"
+    "{{ order_form.notes }}"
+    "</div>"
+    '<div class="field">'
+    "<label>{{ order_form.gift_wrap.label }}</label>"
+    "{{ order_form.gift_wrap }}"
+    "</div>"
+    '<div class="field">'
+    "<label>{{ order_form.shipping.label }}</label>"
+    "{{ order_form.shipping }}"
+    "</div>"
+    '<button type="submit">Place Order — {{ currency }}{{ book.price }}</button>'
+    "</form>"
+    "</div>"
+    "</td></tr>"
+    "{% endfor %}"
+    "</tbody></table>"
+    "<p>Showing {{ books|length }} books</p>"
+)
+
+
+# --- Realistic: 1000 books, no forms (pure template engine) ---
+
+
+@pytest.mark.benchmark(group="realistic")
+def test_cythonized_realistic(benchmark, cythonized_engine):
+    context = {
+        "books": _make_books(1000),
+        "show_description": True,
+        "currency": "$",
+        "site_name": "BookShop",
     }
+    template = cythonized_engine.from_string(BOOKS_TEMPLATE)
+    benchmark(template.render, context)
 
 
-@pytest.fixture
-def variable_context():
-    return {k: f"value_{k}" for k in "abcdefghij"}
+@pytest.mark.benchmark(group="realistic")
+def test_stock_realistic(benchmark, stock_engine):
+    context = {
+        "books": _make_books(1000),
+        "show_description": True,
+        "currency": "$",
+        "site_name": "BookShop",
+    }
+    template = stock_engine.from_string(BOOKS_TEMPLATE)
+    benchmark(template.render, context)
 
 
-@pytest.fixture
-def filter_context():
-    return {"name": "Hello World", "count": 42}
+# --- Realistic + forms: 50 books with form widgets per row ---
 
 
-@pytest.fixture
-def if_context():
-    return {"a": False, "b": False, "c": True}
+@pytest.mark.benchmark(group="realistic_forms")
+def test_cythonized_realistic_forms(benchmark, cythonized_engine):
+    context = {
+        "books": _make_books(50),
+        "show_description": True,
+        "currency": "$",
+        "site_name": "BookShop",
+        "order_form": BookOrderForm(renderer=CythonizedFormRenderer()),
+    }
+    template = cythonized_engine.from_string(BOOKS_WITH_FORMS_TEMPLATE)
+    benchmark(template.render, context)
 
 
-# --- Cythonized engine benchmarks ---
-
-
-@pytest.mark.benchmark(group="loop")
-def test_cythonized_loop(benchmark, cythonized_engine, loop_context):
-    template = cythonized_engine.from_string(
-        "{% for p in products %}"
-        "<div>#{{ p.id }} {{ p.name }}: {{ p.desc }}</div>"
-        "{% endfor %}"
-    )
-    benchmark(template.render, loop_context)
-
-
-@pytest.mark.benchmark(group="variables")
-def test_cythonized_variables(benchmark, cythonized_engine, variable_context):
-    template = cythonized_engine.from_string(
-        "{{ a }} {{ b }} {{ c }} {{ d }} {{ e }} {{ f }} {{ g }} {{ h }} {{ i }} {{ j }}"
-    )
-    benchmark(template.render, variable_context)
-
-
-@pytest.mark.benchmark(group="filters")
-def test_cythonized_filters(benchmark, cythonized_engine, filter_context):
-    template = cythonized_engine.from_string(
-        "{{ name|lower }} {{ name|upper }} {{ name|capfirst }} {{ count|add:1 }} {{ name|slugify }}"
-    )
-    benchmark(template.render, filter_context)
-
-
-@pytest.mark.benchmark(group="if")
-def test_cythonized_if(benchmark, cythonized_engine, if_context):
-    template = cythonized_engine.from_string(
-        "{% if a %}A{% elif b %}B{% elif c %}C{% else %}D{% endif %}"
-    )
-    benchmark(template.render, if_context)
-
-
-@pytest.mark.benchmark(group="plain_text")
-def test_cythonized_plain_text(benchmark, cythonized_engine):
-    template = cythonized_engine.from_string("Hello World! " * 100)
-    benchmark(template.render, {})
-
-
-# --- Stock Django engine benchmarks ---
-
-
-@pytest.mark.benchmark(group="loop")
-def test_stock_loop(benchmark, stock_engine, loop_context):
-    template = stock_engine.from_string(
-        "{% for p in products %}"
-        "<div>#{{ p.id }} {{ p.name }}: {{ p.desc }}</div>"
-        "{% endfor %}"
-    )
-    benchmark(template.render, loop_context)
-
-
-@pytest.mark.benchmark(group="variables")
-def test_stock_variables(benchmark, stock_engine, variable_context):
-    template = stock_engine.from_string(
-        "{{ a }} {{ b }} {{ c }} {{ d }} {{ e }} {{ f }} {{ g }} {{ h }} {{ i }} {{ j }}"
-    )
-    benchmark(template.render, variable_context)
-
-
-@pytest.mark.benchmark(group="filters")
-def test_stock_filters(benchmark, stock_engine, filter_context):
-    template = stock_engine.from_string(
-        "{{ name|lower }} {{ name|upper }} {{ name|capfirst }} {{ count|add:1 }} {{ name|slugify }}"
-    )
-    benchmark(template.render, filter_context)
-
-
-@pytest.mark.benchmark(group="if")
-def test_stock_if(benchmark, stock_engine, if_context):
-    template = stock_engine.from_string(
-        "{% if a %}A{% elif b %}B{% elif c %}C{% else %}D{% endif %}"
-    )
-    benchmark(template.render, if_context)
-
-
-@pytest.mark.benchmark(group="plain_text")
-def test_stock_plain_text(benchmark, stock_engine):
-    template = stock_engine.from_string("Hello World! " * 100)
-    benchmark(template.render, {})
+@pytest.mark.benchmark(group="realistic_forms")
+def test_stock_realistic_forms(benchmark, stock_engine):
+    context = {
+        "books": _make_books(50),
+        "show_description": True,
+        "currency": "$",
+        "site_name": "BookShop",
+        "order_form": BookOrderForm(),
+    }
+    template = stock_engine.from_string(BOOKS_WITH_FORMS_TEMPLATE)
+    benchmark(template.render, context)

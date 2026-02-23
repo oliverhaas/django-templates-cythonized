@@ -137,7 +137,7 @@ def _format_number(number, decimal_sep, decimal_pos, grouping, thousand_sep,
 
 
 @cython.ccall
-def number_format(value, decimal_pos=None, use_l10n=None, force_grouping=False):
+def number_format(value, decimal_pos=None, use_l10n=None, force_grouping=False, lang=None):
     """
     Format a numeric value using localization settings.
 
@@ -145,6 +145,7 @@ def number_format(value, decimal_pos=None, use_l10n=None, force_grouping=False):
     - Early exit for ints when USE_THOUSAND_SEPARATOR is False (avoids get_language)
     - Single get_language() call (Django does up to 4 via get_format)
     - Per-language cached format lookups
+    - Optional pre-cached lang param to skip get_language() entirely
     """
     if use_l10n is None:
         use_l10n = True
@@ -155,9 +156,9 @@ def number_format(value, decimal_pos=None, use_l10n=None, force_grouping=False):
         if not use_l10n or not _get_use_thousand_sep():
             return str(value)
 
-    # Single get_language call (Django's number_format calls get_format 3x,
-    # each of which calls get_language internally)
-    lang = get_language() if use_l10n else None
+    # Use pre-cached language if available, otherwise call get_language().
+    if lang is None:
+        lang = get_language() if use_l10n else None
     formats = _get_number_formats(lang)
 
     use_grouping: cython.bint = bool(use_l10n) and _get_use_thousand_sep()
@@ -171,11 +172,13 @@ def number_format(value, decimal_pos=None, use_l10n=None, force_grouping=False):
 
 
 @cython.ccall
-def localize(value, use_l10n=None):
+def localize(value, use_l10n=None, lang=None):
     """
     Check if value is a localizable type and return it formatted as a string
-    using current locale format.
+    using current locale format. Optional lang param avoids repeated
+    get_language() calls when cached on the Context.
     """
+    global _use_thousand_sep
     if isinstance(value, str):
         return value
     # int check first (catches bool subclass too) — the most common numeric type.
@@ -187,22 +190,32 @@ def localize(value, use_l10n=None):
             return str(value)
         # Inline USE_THOUSAND_SEPARATOR check directly — avoids cfunc call overhead.
         # _use_thousand_sep is a module-level cached value (None on first call).
-        global _use_thousand_sep
         uts = _use_thousand_sep
         if uts is None:
             uts = bool(settings.USE_THOUSAND_SEPARATOR)
             _use_thousand_sep = uts
         if not uts:
             return str(value)
-        return number_format(value, use_l10n=use_l10n)
+        return number_format(value, use_l10n=use_l10n, lang=lang)
     elif isinstance(value, float):
         if use_l10n is False:
             return str(value)
-        return number_format(value, use_l10n=use_l10n)
+        # Float fast path: when USE_THOUSAND_SEPARATOR is False (default) and
+        # decimal separator is "." (English/default), str(float) is correct.
+        uts = _use_thousand_sep
+        if uts is None:
+            uts = bool(settings.USE_THOUSAND_SEPARATOR)
+            _use_thousand_sep = uts
+        if not uts:
+            _lang = lang if lang is not None else get_language()
+            fmt = _get_number_formats(_lang)
+            if fmt[0] == ".":
+                return str(value)
+        return number_format(value, use_l10n=use_l10n, lang=lang)
     elif isinstance(value, decimal.Decimal):
         if use_l10n is False:
             return str(value)
-        return number_format(value, use_l10n=use_l10n)
+        return number_format(value, use_l10n=use_l10n, lang=lang)
     elif isinstance(value, datetime.datetime):
         return date_format(value, "DATETIME_FORMAT", use_l10n=use_l10n)
     elif isinstance(value, datetime.date):

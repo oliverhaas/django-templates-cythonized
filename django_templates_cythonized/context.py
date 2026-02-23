@@ -41,6 +41,7 @@ class ContextDict(dict):
         self.context.pop()
 
 
+@cython.cclass
 class BaseContext:
     def __init__(self, dict_=None):
         self._reset_dicts(dict_)
@@ -54,9 +55,7 @@ class BaseContext:
             self.dicts.append(value)
 
     def __copy__(self):
-        duplicate = BaseContext()
-        duplicate.__class__ = self.__class__
-        duplicate.__dict__ = copy(self.__dict__)
+        duplicate = BaseContext.__new__(type(self))
         duplicate.dicts = self.dicts[:]
         return duplicate
 
@@ -157,6 +156,7 @@ class BaseContext:
         return self.flatten() == other.flatten()
 
 
+@cython.cclass
 class Context(BaseContext):
     "A stack container for variable context"
 
@@ -169,6 +169,9 @@ class Context(BaseContext):
         # Set to the original template -- as opposed to extended or included
         # templates -- during rendering, see bind_template.
         self.template = None
+        # Cached get_language() result — set once per render to avoid
+        # expensive asgiref.local RLock acquisition on every number_format call.
+        self._lang = None
         super().__init__(dict_)
 
     @contextmanager
@@ -182,8 +185,15 @@ class Context(BaseContext):
             self.template = None
 
     def __copy__(self):
-        duplicate = super().__copy__()
+        duplicate = BaseContext.__new__(type(self))
+        duplicate.dicts = self.dicts[:]
+        duplicate.autoescape = self.autoescape
+        duplicate.use_l10n = self.use_l10n
+        duplicate.use_tz = self.use_tz
+        duplicate.template_name = self.template_name
         duplicate.render_context = copy(self.render_context)
+        duplicate.template = self.template
+        duplicate._lang = self._lang
         return duplicate
 
     def update(self, other_dict):
@@ -195,6 +205,7 @@ class Context(BaseContext):
         return ContextDict(self, other_dict)
 
 
+@cython.cclass
 class RenderContext(BaseContext):
     """
     A stack container for storing Template state.
@@ -212,7 +223,9 @@ class RenderContext(BaseContext):
     stored in the normal template context.
     """
 
-    template = None
+    def __init__(self, dict_=None):
+        self.template = None
+        super().__init__(dict_)
 
     def __iter__(self):
         yield from self.dicts[-1]
@@ -238,6 +251,12 @@ class RenderContext(BaseContext):
             self.template = initial
             if isolated_context:
                 self.pop()
+
+    def __copy__(self):
+        duplicate = BaseContext.__new__(type(self))
+        duplicate.dicts = self.dicts[:]
+        duplicate.template = self.template
+        return duplicate
 
 
 class RequestContext(Context):

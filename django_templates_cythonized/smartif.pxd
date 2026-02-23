@@ -4,8 +4,8 @@
 cdef class TokenBase:
     cdef public object id
     cdef public int lbp
-    cdef public object first
-    cdef public object second
+    cdef public TokenBase first
+    cdef public TokenBase second
     cdef public object value
     cpdef eval(self, context)
 

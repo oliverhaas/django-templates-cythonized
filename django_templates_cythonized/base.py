@@ -856,9 +856,15 @@ class FilterExpression:
         self._fast_filter = 0
         if len(filters) == 1:
             f = filters[0]
-            # Only mark fast if: no args, no expects_localtime, no needs_autoescape
-            if len(f[1]) == 0 and not f[2] and not f[3]:
-                self._fast_filter = getattr(f[0], '_cython_fast_code', 0)
+            if not f[2] and not f[3]:  # no expects_localtime, no needs_autoescape
+                f_args = f[1]
+                if len(f_args) == 0:
+                    self._fast_filter = getattr(f[0], '_cython_fast_code', 0)
+                elif (len(f_args) == 1 and not f_args[0][0]
+                      and f_args[0][1] == 's'
+                      and getattr(f[0], '_cython_fast_code', 0) == FFILTER_STRINGFORMAT_S):
+                    # stringformat:'s' — str(value)
+                    self._fast_filter = FFILTER_STRINGFORMAT_S
 
     @cython.ccall
     def resolve(self, context, ignore_failures=False):
@@ -1350,7 +1356,15 @@ def render_value_in_context(value, context):
     # call for the common non-datetime case (ints, floats, etc.).
     if isinstance(value, _datetime_type):
         value = template_localtime(value, use_tz=context.use_tz)
-    value = localize(value, use_l10n=context.use_l10n)
+    # Lazily resolve and cache _lang on the context. Widget sub-renders
+    # (form fields) never hit this path (their values are strings), so
+    # get_language() is only called once for the outer template render.
+    lang = context._lang
+    if lang is None:
+        from django.utils.translation import get_language
+        lang = get_language()
+        context._lang = lang
+    value = localize(value, use_l10n=context.use_l10n, lang=lang)
     if context.autoescape:
         if not issubclass(type(value), str):
             value = str(value)
@@ -1368,6 +1382,7 @@ FFILTER_NONE: cython.int = 0
 FFILTER_LOWER: cython.int = 1
 FFILTER_UPPER: cython.int = 2
 FFILTER_CAPFIRST: cython.int = 3
+FFILTER_STRINGFORMAT_S: cython.int = 4
 
 
 @cython.wraparound(False)
@@ -1395,22 +1410,41 @@ def _resolve_fe_raw(fe, context):
 
     if var.translate:
         return _RESOLVE_FALLBACK
-    if len(lookups) != 1:
+    n_lookups: cython.Py_ssize_t = len(lookups)
+    if n_lookups > 3:
         return _RESOLVE_FALLBACK
 
     key = lookups[0]
     dicts: list = context.dicts
     n_dicts: cython.Py_ssize_t = len(dicts)
     i: cython.Py_ssize_t
+    value = _RESOLVE_FALLBACK
     for i in range(n_dicts - 1, -1, -1):
         d = dicts[i]
         if key in d:
             value = d[key]
+            break
+
+    if value is _RESOLVE_FALLBACK:
+        return _RESOLVE_FALLBACK
+    if callable(value):
+        return _RESOLVE_FALLBACK
+
+    if n_lookups >= 2:
+        seg: cython.Py_ssize_t
+        for seg in range(1, n_lookups):
+            attr = lookups[seg]
+            try:
+                value = value[attr]
+            except (TypeError, KeyError, IndexError):
+                try:
+                    value = getattr(value, attr)
+                except (TypeError, AttributeError):
+                    return _RESOLVE_FALLBACK
             if callable(value):
                 return _RESOLVE_FALLBACK
-            return value
 
-    return _RESOLVE_FALLBACK
+    return value
 
 
 @cython.cfunc
@@ -1454,7 +1488,8 @@ def _render_var_fast(fe, context):
     else:
         if var.translate:
             return None
-        if len(lookups) != 1:
+        n_lookups: cython.Py_ssize_t = len(lookups)
+        if n_lookups > 3:
             return None
 
         key = lookups[0]
@@ -1476,20 +1511,29 @@ def _render_var_fast(fe, context):
         if callable(value):
             return None
 
+        # Resolve additional segments (e.g. book.price, order_form.quantity.label)
+        if n_lookups >= 2:
+            seg: cython.Py_ssize_t
+            for seg in range(1, n_lookups):
+                attr = lookups[seg]
+                try:
+                    value = value[attr]
+                except (TypeError, KeyError, IndexError):
+                    try:
+                        value = getattr(value, attr)
+                    except (TypeError, AttributeError):
+                        return None
+                if callable(value):
+                    return None
+
     # Apply single filter if present
     if n_filters == 1:
         f_tuple = filters[0]
-        # f_tuple = (func, args, expects_localtime, needs_autoescape, is_safe)
-        f_args: list = f_tuple[1]
-        if len(f_args) != 0 or f_tuple[2] or f_tuple[3]:
-            # Has args, or needs localtime/autoescape — fall back
-            return None
-        is_safe: cython.bint = f_tuple[4]
-        was_safe: cython.bint = isinstance(value, SafeData)
-
         fast_code: cython.int = fe._fast_filter
         if fast_code != 0:
             # C-level dispatch — bypass Python function call + @stringfilter wrapper
+            is_safe: cython.bint = f_tuple[4]
+            was_safe: cython.bint = isinstance(value, SafeData)
             if not isinstance(value, str):
                 value = str(value)
             if fast_code == FFILTER_LOWER:
@@ -1498,12 +1542,20 @@ def _render_var_fast(fe, context):
                 value = value.upper()
             elif fast_code == FFILTER_CAPFIRST:
                 value = value[0].upper() + value[1:] if value else value
+            # FFILTER_STRINGFORMAT_S: str(value) already done above
+            if is_safe and was_safe:
+                value = mark_safe(value)
         else:
+            # f_tuple = (func, args, expects_localtime, needs_autoescape, is_safe)
+            f_args: list = f_tuple[1]
+            if len(f_args) != 0 or f_tuple[2] or f_tuple[3]:
+                return None
+            is_safe = f_tuple[4]
+            was_safe = isinstance(value, SafeData)
             func = f_tuple[0]
             value = func(value)
-
-        if is_safe and was_safe:
-            value = mark_safe(value)
+            if is_safe and was_safe:
+                value = mark_safe(value)
 
     # Inline render_value_in_context for string values (the common case).
     # Return plain escaped str, NOT SafeString — callers already wrap the
@@ -1515,9 +1567,25 @@ def _render_var_fast(fe, context):
             return _fast_escape(value)
         return value
 
-    # Non-string values: delegate to render_value_in_context for
-    # template_localtime + localize + escaping. Our localize is fast enough
-    # that we don't need to fall back to the slow VariableNode.render() path.
+    # Int fast path: digits never need HTML escaping or localize (when no
+    # thousand separator). Matches the fast path in _render_var_with_value.
+    if isinstance(value, int) and not isinstance(value, bool):
+        return str(value)
+
+    # Float fast path: str(float) produces digits, '.', '-', 'e', '+'
+    # None of which are HTML special chars, so skip the _fast_escape call.
+    # Also skip isinstance(str) and isinstance(datetime) checks in
+    # render_value_in_context.
+    if isinstance(value, float):
+        lang = context._lang
+        if lang is None:
+            from django.utils.translation import get_language
+            lang = get_language()
+            context._lang = lang
+        return localize(value, use_l10n=context.use_l10n, lang=lang)
+
+    # Non-string, non-int, non-float values: delegate to render_value_in_context
+    # for template_localtime + localize + escaping.
     return render_value_in_context(value, context)
 
 
@@ -1562,14 +1630,10 @@ def _render_var_with_value(fe, value, context):
     # Apply single filter if present
     if n_filters == 1:
         f_tuple = filters[0]
-        f_args: list = f_tuple[1]
-        if len(f_args) != 0 or f_tuple[2] or f_tuple[3]:
-            return None
-        is_safe: cython.bint = f_tuple[4]
-        was_safe: cython.bint = isinstance(value, SafeData)
-
         fast_code: cython.int = fe._fast_filter
         if fast_code != 0:
+            is_safe: cython.bint = f_tuple[4]
+            was_safe: cython.bint = isinstance(value, SafeData)
             if not isinstance(value, str):
                 value = str(value)
             if fast_code == FFILTER_LOWER:
@@ -1578,12 +1642,19 @@ def _render_var_with_value(fe, value, context):
                 value = value.upper()
             elif fast_code == FFILTER_CAPFIRST:
                 value = value[0].upper() + value[1:] if value else value
+            # FFILTER_STRINGFORMAT_S: str(value) already done above
+            if is_safe and was_safe:
+                value = mark_safe(value)
         else:
+            f_args: list = f_tuple[1]
+            if len(f_args) != 0 or f_tuple[2] or f_tuple[3]:
+                return None
+            is_safe = f_tuple[4]
+            was_safe = isinstance(value, SafeData)
             func = f_tuple[0]
             value = func(value)
-
-        if is_safe and was_safe:
-            value = mark_safe(value)
+            if is_safe and was_safe:
+                value = mark_safe(value)
 
     # Inline render_value_in_context
     if isinstance(value, str):
@@ -1594,13 +1665,20 @@ def _render_var_with_value(fe, value, context):
         return value
 
     # Inline the int fast path: int → str(value) (no escaping needed for digits).
-    # This is the common case in loop benchmarks ({% for item in items %}{{ item }}).
-    # Eliminates 4 function calls: render_value_in_context → localize →
-    # _get_use_thousand_sep → _fast_escape, each ~0.015-0.05μs overhead.
     if isinstance(value, int) and not isinstance(value, bool):
         return str(value)
 
-    # Non-string, non-int: delegate to render_value_in_context for localize/escaping
+    # Float fast path: str(float) produces digits, '.', '-', 'e', '+'
+    # None of which are HTML special chars.
+    if isinstance(value, float):
+        lang = context._lang
+        if lang is None:
+            from django.utils.translation import get_language
+            lang = get_language()
+            context._lang = lang
+        return localize(value, use_l10n=context.use_l10n, lang=lang)
+
+    # Non-string, non-int, non-float: delegate to render_value_in_context
     return render_value_in_context(value, context)
 
 

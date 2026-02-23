@@ -296,6 +296,9 @@ def stringformat(value, arg):
         return ""
 
 
+stringformat._cython_fast_code = 4  # FFILTER_STRINGFORMAT_S
+
+
 @register.filter(is_safe=True)
 @stringfilter
 def title(value):
