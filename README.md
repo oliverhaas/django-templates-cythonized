@@ -16,10 +16,15 @@ This is explicitly exploratory -- motivated by wanting to work with Cython again
 
 ## Preliminary benchmarks
 
-Measured on Python 3.14t (free-threaded) with `pytest-benchmark`. The "realistic"
-benchmark renders a book catalog table with `{% for %}`, `{% if %}`/`{% elif %}`,
-`{% cycle %}`, `|capfirst` filters, and mixed int/float/string variables. The
-"realistic + forms" variant adds Django form widgets (4 fields per row).
+Measured on an AMD Ryzen 9 5950X (32 GB RAM) running Python 3.14t (free-threaded)
+with `pytest-benchmark`. Note that typical cloud/web instances (e.g. 2-4 vCPU VMs)
+are easily 3-10x slower than this desktop CPU, especially under load -- so the
+absolute times below would be proportionally larger in production.
+
+The "realistic" benchmark renders a book catalog table with `{% for %}`,
+`{% if %}`/`{% elif %}`, `{% cycle %}`, `|capfirst` filters, and mixed
+int/float/string variables. The "realistic + forms" variant adds Django form
+widgets (4 fields per row).
 
 | Benchmark | Cythonized | Stock Django | Speedup |
 |-----------|-----------|--------------|---------|
