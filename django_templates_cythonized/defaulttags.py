@@ -21,6 +21,7 @@ from .html import conditional_escape, escape
 from .safestring import SafeString, mark_safe
 
 from cython.cimports.django_templates_cythonized.base import Node, TextNode, NodeList, VariableNode, FilterExpression, _render_var_fast, _fe_is_direct_loopvar, _render_var_with_value, _resolve_fe_raw
+from cython.cimports.django_templates_cythonized.context import Context
 from cython.cimports.django_templates_cythonized.smartif import Literal
 
 from .base import (
@@ -63,7 +64,7 @@ class AutoEscapeControlNode(Node):
         self.nodelist = nodelist
 
     @cython.ccall
-    def render(self, context):
+    def render(self, context: Context):
         old_setting = context.autoescape
         context.autoescape = self.setting
         output = self.nodelist.render(context)
@@ -79,7 +80,7 @@ class CommentNode(Node):
     child_nodelists = ()
 
     @cython.ccall
-    def render(self, context):
+    def render(self, context: Context):
         return ""
 
 
@@ -88,7 +89,7 @@ class CsrfTokenNode(Node):
     child_nodelists = ()
 
     @cython.ccall
-    def render(self, context):
+    def render(self, context: Context):
         csrf_token = context.get("csrf_token")
         if csrf_token:
             if csrf_token == "NOTPROVIDED":
@@ -122,7 +123,7 @@ class CycleNode(Node):
         self.silent = silent
 
     @cython.ccall
-    def render(self, context):
+    def render(self, context: Context):
         if self not in context.render_context:
             # First time the node is rendered in template
             context.render_context[self] = itertools_cycle(self.cyclevars)
@@ -135,7 +136,7 @@ class CycleNode(Node):
         return render_value_in_context(value, context)
 
     @cython.ccall
-    def reset(self, context):
+    def reset(self, context: Context):
         """
         Reset the cycle iteration back to the beginning.
         """
@@ -145,7 +146,7 @@ class CycleNode(Node):
 @cython.cclass
 class DebugNode(Node):
     @cython.ccall
-    def render(self, context):
+    def render(self, context: Context):
         if not settings.DEBUG:
             return ""
 
@@ -167,7 +168,7 @@ class FilterNode(Node):
         self.nodelist = nodelist
 
     @cython.ccall
-    def render(self, context):
+    def render(self, context: Context):
         output = self.nodelist.render(context)
         # Apply filters.
         with context.push(var=output):
@@ -184,7 +185,7 @@ class FirstOfNode(Node):
         self.asvar = asvar
 
     @cython.ccall
-    def render(self, context):
+    def render(self, context: Context):
         first = ""
         for var in self.vars:
             value = var.resolve(context, ignore_failures=True)
@@ -289,7 +290,7 @@ class ForNode(Node):
 
     @cython.wraparound(False)
     @cython.ccall
-    def render(self, context):
+    def render(self, context: Context):
         i: cython.int
         j: cython.Py_ssize_t
         idx: cython.Py_ssize_t
@@ -342,11 +343,12 @@ class ForNode(Node):
             if not unpack and not debug:
                 needs_ctx_write = False
                 for j in range(num_nodes):
-                    nd = loop_nodes[j]
+                    nd: Node = loop_nodes[j]
                     if isinstance(nd, TextNode):
                         continue
                     if isinstance(nd, VariableNode):
-                        if _fe_is_direct_loopvar(nd.filter_expression, loopvar0):
+                        nd_vnode: VariableNode = nd
+                        if _fe_is_direct_loopvar(nd_vnode.filter_expression, loopvar0):
                             continue
                     needs_ctx_write = True
                     break
@@ -364,12 +366,14 @@ class ForNode(Node):
                 for i, item in enumerate(values):
                     loop_ctx._i = i
                     for j in range(num_nodes):
-                        inner_node = loop_nodes[j]
+                        inner_node: Node = loop_nodes[j]
                         if isinstance(inner_node, TextNode):
-                            nodelist[idx] = inner_node.s
+                            inner_tnode: TextNode = inner_node
+                            nodelist[idx] = inner_tnode.s
                         else:
+                            inner_vnode: VariableNode = inner_node
                             nodelist[idx] = _render_var_with_value(
-                                inner_node.filter_expression, item, context
+                                inner_vnode.filter_expression, item, context
                             )
                         idx += 1
             else:
@@ -403,9 +407,11 @@ class ForNode(Node):
                         for j in range(num_nodes):
                             inner_node = loop_nodes[j]
                             if isinstance(inner_node, TextNode):
-                                nodelist[idx] = inner_node.s
+                                inner_tnode = inner_node
+                                nodelist[idx] = inner_tnode.s
                             elif isinstance(inner_node, VariableNode):
-                                result = _render_var_fast(inner_node.filter_expression, context)
+                                inner_vnode = inner_node
+                                result = _render_var_fast(inner_vnode.filter_expression, context)
                                 if result is not None:
                                     nodelist[idx] = result
                                 else:
@@ -438,7 +444,7 @@ class IfChangedNode(Node):
         self._varlist = varlist
 
     @cython.ccall
-    def render(self, context):
+    def render(self, context: Context):
         # Init state storage
         state_frame = self._get_context_stack_frame(context)
         state_frame.setdefault(self)
@@ -498,7 +504,7 @@ class IfNode(Node):
         return NodeList(self)
 
     @cython.ccall
-    def render(self, context):
+    def render(self, context: Context):
         match: object
         conditions_nodelists = self.conditions_nodelists
         # Fast path: single {% if %} with no elif/else (the common case).
@@ -539,7 +545,7 @@ class LoremNode(Node):
         self.common = common
 
     @cython.ccall
-    def render(self, context):
+    def render(self, context: Context):
         try:
             count = int(self.count.resolve(context))
         except (ValueError, TypeError):
@@ -584,7 +590,7 @@ class RegroupNode(Node):
         ]
 
     @cython.ccall
-    def render(self, context):
+    def render(self, context: Context):
         obj_list = self.target.resolve(context, ignore_failures=True)
         if obj_list is None:
             # target variable wasn't found in context; fail silently.
@@ -601,7 +607,7 @@ class LoadNode(Node):
     child_nodelists = ()
 
     @cython.ccall
-    def render(self, context):
+    def render(self, context: Context):
         return ""
 
 
@@ -615,7 +621,7 @@ class NowNode(Node):
         self.asvar = asvar
 
     @cython.ccall
-    def render(self, context):
+    def render(self, context: Context):
         tzinfo = timezone.get_current_timezone() if settings.USE_TZ else None
         formatted = date(datetime.now(tz=tzinfo), self.format_string)
 
@@ -638,7 +644,7 @@ class PartialDefNode(Node):
         self.nodelist = nodelist
 
     @cython.ccall
-    def render(self, context):
+    def render(self, context: Context):
         return self.nodelist.render(context) if self.inline else ""
 
 
@@ -653,7 +659,7 @@ class PartialNode(Node):
         self.partial_mapping = partial_mapping
 
     @cython.ccall
-    def render(self, context):
+    def render(self, context: Context):
         try:
             return self.partial_mapping[self.partial_name].render(context)
         except KeyError:
@@ -670,7 +676,7 @@ class ResetCycleNode(Node):
         self.node = node
 
     @cython.ccall
-    def render(self, context):
+    def render(self, context: Context):
         self.node.reset(context)
         return ""
 
@@ -683,7 +689,7 @@ class SpacelessNode(Node):
         self.nodelist = nodelist
 
     @cython.ccall
-    def render(self, context):
+    def render(self, context: Context):
         from django.utils.html import strip_spaces_between_tags
 
         return strip_spaces_between_tags(self.nodelist.render(context).strip())
@@ -707,7 +713,7 @@ class TemplateTagNode(Node):
         self.tagtype = tagtype
 
     @cython.ccall
-    def render(self, context):
+    def render(self, context: Context):
         return self.mapping.get(self.tagtype, "")
 
 
@@ -735,7 +741,7 @@ class URLNode(Node):
         )
 
     @cython.ccall
-    def render(self, context):
+    def render(self, context: Context):
         from django.urls import NoReverseMatch, reverse
 
         args = [arg.resolve(context) for arg in self.args]
@@ -774,7 +780,7 @@ class VerbatimNode(Node):
         self.content = content
 
     @cython.ccall
-    def render(self, context):
+    def render(self, context: Context):
         return self.content
 
 
@@ -792,7 +798,7 @@ class WidthRatioNode(Node):
         self.asvar = asvar
 
     @cython.ccall
-    def render(self, context):
+    def render(self, context: Context):
         try:
             value = self.val_expr.resolve(context)
             max_value = self.max_expr.resolve(context)
@@ -835,7 +841,7 @@ class WithNode(Node):
         return "<%s>" % self.__class__.__name__
 
     @cython.ccall
-    def render(self, context):
+    def render(self, context: Context):
         values = {key: val.resolve(context) for key, val in self.extra_context.items()}
         with context.push(**values):
             return self.nodelist.render(context)
@@ -1182,7 +1188,7 @@ class TemplateLiteral(Literal):
         return self.text
 
     @cython.ccall
-    def eval(self, context):
+    def eval(self, context: Context):
         result = _resolve_fe_raw(self.value, context)
         if result is not _RESOLVE_FALLBACK:
             return result

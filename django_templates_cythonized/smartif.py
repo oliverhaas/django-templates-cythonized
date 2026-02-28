@@ -3,6 +3,7 @@ Parser and utilities for the smart 'if' tag
 """
 
 import cython
+from cython.cimports.django_templates_cythonized.context import Context
 
 # Using a simple top down parser, as described here:
 # https://11l-lang.org/archive/simple-top-down-parsing/
@@ -43,7 +44,7 @@ class TokenBase:
         value = None
 
     @cython.ccall
-    def eval(self, context):
+    def eval(self, context: Context):
         return None
 
     def nud(self, parser):
@@ -104,7 +105,7 @@ class Operator(TokenBase):
         )
 
     @cython.ccall
-    def eval(self, context):
+    def eval(self, context: Context):
         op: cython.int = self.op_code
         try:
             if op == OP_OR:
@@ -163,7 +164,7 @@ class Literal(TokenBase):
         return self
 
     @cython.ccall
-    def eval(self, context):
+    def eval(self, context: Context):
         return self.value
 
     def __repr__(self):

@@ -5,6 +5,7 @@ from collections import defaultdict
 from .safestring import mark_safe
 
 from cython.cimports.django_templates_cythonized.base import Node
+from cython.cimports.django_templates_cythonized.context import Context
 
 from .base import Template, TemplateSyntaxError, TextNode, Variable, token_kwargs
 from .library import Library
@@ -65,7 +66,7 @@ class BlockNode(Node):
         return "<Block Node: %s. Contents: %r>" % (self.name, self.nodelist)
 
     @cython.ccall
-    def render(self, context):
+    def render(self, context: Context):
         block_context = context.render_context.get(BLOCK_CONTEXT_KEY)
         with context.push():
             if block_context is None:
@@ -120,7 +121,7 @@ class ExtendsNode(Node):
         return "<%s: extends %s>" % (self.__class__.__name__, self.parent_name.token)
 
     @cython.ccall
-    def find_template(self, template_name, context):
+    def find_template(self, template_name, context: Context):
         """
         This is a wrapper around engine.find_template(). A history is kept in
         the render_context attribute between successive extends calls and
@@ -139,7 +140,7 @@ class ExtendsNode(Node):
         return template
 
     @cython.ccall
-    def get_parent(self, context):
+    def get_parent(self, context: Context):
         parent = self.parent_name.resolve(context)
         if not parent:
             error_msg = "Invalid template name in 'extends' tag: %r." % parent
@@ -157,7 +158,7 @@ class ExtendsNode(Node):
         return self.find_template(parent, context)
 
     @cython.ccall
-    def render(self, context):
+    def render(self, context: Context):
         compiled_parent = self.get_parent(context)
 
         if BLOCK_CONTEXT_KEY not in context.render_context:
@@ -212,7 +213,7 @@ class IncludeNode(Node):
         return f"<{self.__class__.__qualname__}: template={self.template!r}>"
 
     @cython.ccall
-    def render(self, context):
+    def render(self, context: Context):
         """
         Render the specified template and context. Cache the template object
         in render_context to avoid reparsing and loading when used in a for

@@ -62,6 +62,7 @@ from enum import Enum
 from .context import BaseContext
 # C-level cimports: in compiled mode, these use cpdef fast path (C-level call);
 # in pure Python mode, they fall back to regular imports automatically.
+from cython.cimports.django_templates_cythonized.context import Context
 from cython.cimports.django_templates_cythonized.formats import localize
 from cython.cimports.django_templates_cythonized.html import conditional_escape
 from cython.cimports.django_templates_cythonized.timezone import template_localtime
@@ -177,11 +178,11 @@ class Template:
         )
 
     @cython.ccall
-    def _render(self, context):
+    def _render(self, context: Context):
         return self.nodelist.render(context)
 
     @cython.ccall
-    def render(self, context):
+    def render(self, context: Context):
         "Display stage -- can be called many times"
         # Inline push_state(self) — avoids contextlib generator + ContextDict overhead.
         rc = context.render_context
@@ -377,11 +378,11 @@ class PartialTemplate:
         return self.find_partial_source(template.source)
 
     @cython.ccall
-    def _render(self, context):
+    def _render(self, context: Context):
         return self.nodelist.render(context)
 
     @cython.ccall
-    def render(self, context):
+    def render(self, context: Context):
         # Inline push_state + bind_template (same as Template.render).
         rc = context.render_context
         _rc_initial = rc.template
@@ -867,7 +868,7 @@ class FilterExpression:
                     self._fast_filter = FFILTER_STRINGFORMAT_S
 
     @cython.ccall
-    def resolve(self, context, ignore_failures=False):
+    def resolve(self, context: Context, ignore_failures=False):
         if self.is_var:
             try:
                 obj = self.var.resolve(context)
@@ -1162,14 +1163,14 @@ class Node:
     child_nodelists = ("nodelist",)
 
     @cython.ccall
-    def render(self, context):
+    def render(self, context: Context):
         """
         Return the node rendered as a string.
         """
         pass
 
     @cython.ccall
-    def render_annotated(self, context):
+    def render_annotated(self, context: Context):
         """
         Render the node. If debug is True and an exception occurs during
         rendering, the exception is annotated with contextual line information
@@ -1245,7 +1246,7 @@ class NodeList:
 
     @cython.wraparound(False)
     @cython.ccall
-    def render(self, context):
+    def render(self, context: Context):
         nodes: list = self._nodes
         n: cython.Py_ssize_t = len(nodes)
         i: cython.Py_ssize_t
@@ -1265,11 +1266,13 @@ class NodeList:
         if not debug:
             # Single-node fast path: skip list alloc + join + double SafeString wrap.
             if n == 1:
-                node = nodes[0]
+                node: Node = nodes[0]
                 if isinstance(node, TextNode):
-                    return SafeString(node.s)
+                    tnode: TextNode = node
+                    return SafeString(tnode.s)
                 elif isinstance(node, VariableNode):
-                    result = _render_var_fast(node.filter_expression, context)
+                    vnode: VariableNode = node
+                    result = _render_var_fast(vnode.filter_expression, context)
                     if result is not None:
                         if isinstance(result, SafeData):
                             return result
@@ -1289,9 +1292,11 @@ class NodeList:
             for i in range(n):
                 node = nodes[i]
                 if isinstance(node, TextNode):
-                    parts[i] = node.s
+                    tnode = node
+                    parts[i] = tnode.s
                 elif isinstance(node, VariableNode):
-                    result = _render_var_fast(node.filter_expression, context)
+                    vnode = node
+                    result = _render_var_fast(vnode.filter_expression, context)
                     if result is not None:
                         parts[i] = result
                     else:
@@ -1301,7 +1306,8 @@ class NodeList:
         else:
             parts = [None] * n
             for i in range(n):
-                parts[i] = nodes[i].render_annotated(context)
+                node = nodes[i]
+                parts[i] = node.render_annotated(context)
         return SafeString("".join(parts))
 
     @cython.ccall
@@ -1323,11 +1329,11 @@ class TextNode(Node):
         return "<%s: %r>" % (self.__class__.__name__, self.s[:25])
 
     @cython.ccall
-    def render(self, context):
+    def render(self, context: Context):
         return self.s
 
     @cython.ccall
-    def render_annotated(self, context):
+    def render_annotated(self, context: Context):
         """
         Return the given value.
 
@@ -1338,7 +1344,7 @@ class TextNode(Node):
 
 
 @cython.ccall
-def render_value_in_context(value, context):
+def render_value_in_context(value, context: Context):
     """
     Convert any value to a string to become part of a rendered template. This
     means escaping, if required, and conversion to a string. If value is a
@@ -1386,7 +1392,7 @@ FFILTER_STRINGFORMAT_S: cython.int = 4
 
 
 @cython.wraparound(False)
-def _resolve_fe_raw(fe, context):
+def _resolve_fe_raw(fe: FilterExpression, context: Context):
     """
     Fast C-level FilterExpression.resolve for no-filter single-segment case.
     Returns the resolved value, or _RESOLVE_FALLBACK sentinel if the full
@@ -1463,7 +1469,7 @@ def _fast_escape(value):
 
 
 @cython.wraparound(False)
-def _render_var_fast(fe, context):
+def _render_var_fast(fe: FilterExpression, context: Context):
     """
     Fused C-level render for {{ variable }} and {{ variable|simple_filter }}.
     Inlines the full chain: FilterExpression.resolve → Variable.resolve →
@@ -1589,7 +1595,7 @@ def _render_var_fast(fe, context):
     return render_value_in_context(value, context)
 
 
-def _fe_is_direct_loopvar(fe, loopvar):
+def _fe_is_direct_loopvar(fe: FilterExpression, loopvar):
     """
     Check if a FilterExpression is a simple direct reference to the given
     loop variable name (single-segment, no translate, eligible filters).
@@ -1615,7 +1621,7 @@ def _fe_is_direct_loopvar(fe, loopvar):
 
 
 @cython.wraparound(False)
-def _render_var_with_value(fe, value, context):
+def _render_var_with_value(fe: FilterExpression, value, context: Context):
     """
     Render a FilterExpression with a pre-resolved value, bypassing context
     lookup entirely. Used by ForNode to avoid the dict write + scan round-trip
@@ -1692,7 +1698,7 @@ class VariableNode(Node):
         return "<Variable Node: %s>" % self.filter_expression
 
     @cython.ccall
-    def render(self, context):
+    def render(self, context: Context):
         try:
             output = self.filter_expression.resolve(context)
         except UnicodeDecodeError:

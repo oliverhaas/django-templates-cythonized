@@ -8,6 +8,7 @@ from .html import conditional_escape
 from django.utils.inspect import lazy_annotations
 
 from cython.cimports.django_templates_cythonized.base import Node
+from cython.cimports.django_templates_cythonized.context import Context
 
 from .base import Template, token_kwargs
 from .exceptions import TemplateSyntaxError
@@ -315,7 +316,7 @@ class TagHelperNode(Node):
         self.kwargs = kwargs
 
     @cython.ccall
-    def get_resolved_arguments(self, context):
+    def get_resolved_arguments(self, context: Context):
         resolved_args = [var.resolve(context) for var in self.args]
         if self.takes_context:
             resolved_args = [context, *resolved_args]
@@ -333,7 +334,7 @@ class SimpleNode(TagHelperNode):
         self.target_var = target_var
 
     @cython.ccall
-    def render(self, context):
+    def render(self, context: Context):
         resolved_args, resolved_kwargs = self.get_resolved_arguments(context)
         output = self.func(*resolved_args, **resolved_kwargs)
         if self.target_var is not None:
@@ -353,7 +354,7 @@ class SimpleBlockNode(SimpleNode):
         self.nodelist = nodelist
 
     @cython.ccall
-    def get_resolved_arguments(self, context):
+    def get_resolved_arguments(self, context: Context):
         resolved_args, resolved_kwargs = super().get_resolved_arguments(context)
 
         # Restore the "content" argument.
@@ -374,7 +375,7 @@ class InclusionNode(TagHelperNode):
         self.filename = filename
 
     @cython.ccall
-    def render(self, context):
+    def render(self, context: Context):
         """
         Render the specified template and context. Cache the template object
         in render_context to avoid reparsing and loading when used in a for

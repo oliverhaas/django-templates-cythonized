@@ -3,22 +3,24 @@
 # that Node, TextNode, VariableNode are extension types so their subclasses
 # can also be extension types.
 
+from django_templates_cythonized.context cimport Context
+
 cdef class Node:
     cdef public object token
     cdef public object origin
-    cpdef render(self, context)
-    cpdef render_annotated(self, context)
+    cpdef render(self, Context context)
+    cpdef render_annotated(self, Context context)
     cpdef get_nodes_by_type(self, nodetype)
 
 cdef class TextNode(Node):
-    cdef public object s
-    cpdef render(self, context)
-    cpdef render_annotated(self, context)
+    cdef public str s
+    cpdef render(self, Context context)
+    cpdef render_annotated(self, Context context)
 
 cdef class NodeList:
     cdef public list _nodes
     cdef public bint contains_nontext
-    cpdef render(self, context)
+    cpdef render(self, Context context)
     cpdef get_nodes_by_type(self, nodetype)
 
 cdef class FilterExpression:
@@ -27,13 +29,14 @@ cdef class FilterExpression:
     cdef public object var
     cdef public bint is_var
     cdef public int _fast_filter
-    cpdef resolve(self, context, ignore_failures=*)
+    cpdef resolve(self, Context context, ignore_failures=*)
 
 cdef class VariableNode(Node):
-    cdef public object filter_expression
-    cpdef render(self, context)
+    cdef public FilterExpression filter_expression
+    cpdef render(self, Context context)
 
-cdef _resolve_fe_raw(FilterExpression fe, object context)
-cdef _render_var_fast(FilterExpression fe, object context)
+cpdef render_value_in_context(object value, Context context)
+cdef _resolve_fe_raw(FilterExpression fe, Context context)
+cdef _render_var_fast(FilterExpression fe, Context context)
 cdef bint _fe_is_direct_loopvar(FilterExpression fe, object loopvar)
-cdef _render_var_with_value(FilterExpression fe, object value, object context)
+cdef _render_var_with_value(FilterExpression fe, object value, Context context)
