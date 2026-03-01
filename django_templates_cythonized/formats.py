@@ -38,6 +38,20 @@ def _get_use_thousand_sep():
 
 
 @cython.cfunc
+def _float_is_str_fast(lang) -> cython.bint:
+    """Return True if str(float) is sufficient (no thousand sep, decimal sep is '.')."""
+    global _use_thousand_sep
+    uts = _use_thousand_sep
+    if uts is None:
+        uts = bool(settings.USE_THOUSAND_SEPARATOR)
+        _use_thousand_sep = uts
+    if uts:
+        return False
+    fmt = _get_number_formats(lang)
+    return fmt[0] == "."
+
+
+@cython.cfunc
 def _get_number_formats(lang):
     """Get cached (decimal_sep, grouping, thousand_sep) for the given language."""
     cached = _number_format_cache.get(lang)

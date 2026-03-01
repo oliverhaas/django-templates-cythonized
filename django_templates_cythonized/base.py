@@ -63,7 +63,7 @@ from .context import BaseContext
 # C-level cimports: in compiled mode, these use cpdef fast path (C-level call);
 # in pure Python mode, they fall back to regular imports automatically.
 from cython.cimports.django_templates_cythonized.context import Context
-from cython.cimports.django_templates_cythonized.formats import localize
+from cython.cimports.django_templates_cythonized.formats import localize, _float_is_str_fast
 from cython.cimports.django_templates_cythonized.html import conditional_escape
 from cython.cimports.django_templates_cythonized.timezone import template_localtime
 from .safestring import SafeData, SafeString, mark_safe
@@ -1595,14 +1595,14 @@ def _render_var_fast(fe: FilterExpression, context: Context):
 
     # Float fast path: str(float) produces digits, '.', '-', 'e', '+'
     # None of which are HTML special chars, so skip the _fast_escape call.
-    # Also skip isinstance(str) and isinstance(datetime) checks in
-    # render_value_in_context.
     if isinstance(value, float):
         lang = context._lang
         if lang is None:
             from django.utils.translation import get_language
             lang = get_language()
             context._lang = lang
+        if _float_is_str_fast(lang):
+            return str(value)
         return localize(value, use_l10n=context.use_l10n, lang=lang)
 
     # Non-string, non-int, non-float values: delegate to render_value_in_context
@@ -1703,6 +1703,8 @@ def _render_var_with_value(fe: FilterExpression, value, context: Context):
             from django.utils.translation import get_language
             lang = get_language()
             context._lang = lang
+        if _float_is_str_fast(lang):
+            return str(value)
         return localize(value, use_l10n=context.use_l10n, lang=lang)
 
     # Non-string, non-int, non-float: delegate to render_value_in_context
