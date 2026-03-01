@@ -30,6 +30,17 @@ cdef class NodeList:
     cpdef render(self, Context context)
     cpdef get_nodes_by_type(self, nodetype)
 
+cdef class Template:
+    cdef public object name
+    cdef public object origin
+    cdef public object engine
+    cdef public str source
+    cdef public NodeList nodelist
+    cdef public dict extra_data
+    cpdef _render(self, Context context)
+    cpdef render(self, Context context)
+    cpdef compile_nodelist(self)
+
 cdef class FilterExpression:
     cdef public object token
     cdef public list filters

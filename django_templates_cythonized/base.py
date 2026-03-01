@@ -146,13 +146,8 @@ class Origin:
 
 
 @cython.cclass
+@cython.cclass
 class Template:
-    name = cython.declare(object, visibility='public')
-    origin = cython.declare(object, visibility='public')
-    engine = cython.declare(object, visibility='public')
-    source = cython.declare(str, visibility='public')
-    nodelist = cython.declare(object, visibility='public')
-    extra_data = cython.declare(dict, visibility='public')
 
     def __init__(self, template_string, origin=None, name=None, engine=None):
         # If Template is instantiated directly rather than from an Engine and
@@ -1429,11 +1424,12 @@ def _resolve_fe_raw(fe: FilterExpression, context: Context):
 
     if var.translate:
         return _RESOLVE_FALLBACK
-    n_lookups: cython.Py_ssize_t = len(lookups)
+    lookups_t: tuple = lookups
+    n_lookups: cython.Py_ssize_t = len(lookups_t)
     if n_lookups > 3:
         return _RESOLVE_FALLBACK
 
-    key = lookups[0]
+    key = lookups_t[0]
     dicts: list = context.dicts
     n_dicts: cython.Py_ssize_t = len(dicts)
     i: cython.Py_ssize_t
@@ -1452,7 +1448,7 @@ def _resolve_fe_raw(fe: FilterExpression, context: Context):
     if n_lookups >= 2:
         seg: cython.Py_ssize_t
         for seg in range(1, n_lookups):
-            attr = lookups[seg]
+            attr = lookups_t[seg]
             try:
                 value = value[attr]
             except (TypeError, KeyError, IndexError):
@@ -1507,11 +1503,12 @@ def _render_var_fast(fe: FilterExpression, context: Context):
     else:
         if var.translate:
             return None
-        n_lookups: cython.Py_ssize_t = len(lookups)
+        lookups_t: tuple = lookups
+        n_lookups: cython.Py_ssize_t = len(lookups_t)
         if n_lookups > 3:
             return None
 
-        key = lookups[0]
+        key = lookups_t[0]
         # Inline context dict scan
         dicts: list = context.dicts
         n_dicts: cython.Py_ssize_t = len(dicts)
@@ -1534,7 +1531,7 @@ def _render_var_fast(fe: FilterExpression, context: Context):
         if n_lookups >= 2:
             seg: cython.Py_ssize_t
             for seg in range(1, n_lookups):
-                attr = lookups[seg]
+                attr = lookups_t[seg]
                 try:
                     value = value[attr]
                 except (TypeError, KeyError, IndexError):
