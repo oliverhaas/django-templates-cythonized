@@ -960,8 +960,11 @@ class Variable:
     (The example assumes VARIABLE_ATTRIBUTE_SEPARATOR is '.')
     """
 
-    cython.declare(var=object, literal=object, lookups=object,
-                   translate=cython.bint, message_context=object)
+    var = cython.declare(object, visibility='public')
+    literal = cython.declare(object, visibility='public')
+    lookups = cython.declare(object, visibility='public')
+    translate = cython.declare(cython.bint, visibility='public')
+    message_context = cython.declare(object, visibility='public')
 
     def __init__(self, var):
         self.var = var
@@ -1462,7 +1465,6 @@ def _resolve_fe_raw(fe: FilterExpression, context: Context):
     return value
 
 
-@cython.cfunc
 def _fast_escape(value):
     """
     Fast HTML escape: scan string for special chars at C level.

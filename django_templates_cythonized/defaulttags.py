@@ -18,10 +18,11 @@ from django.utils.html import format_html
 from django.utils.lorem_ipsum import paragraphs, words
 
 from .html import conditional_escape, escape
-from .safestring import SafeString, mark_safe
+from .safestring import SafeData, SafeString, mark_safe
 
-from cython.cimports.django_templates_cythonized.base import Node, TextNode, NodeList, VariableNode, FilterExpression, _render_var_fast, _fe_is_direct_loopvar, _render_var_with_value, _resolve_fe_raw
+from cython.cimports.django_templates_cythonized.base import Node, TextNode, NodeList, VariableNode, FilterExpression, _fast_escape, _render_var_fast, _fe_is_direct_loopvar, _render_var_with_value, _resolve_fe_raw
 from cython.cimports.django_templates_cythonized.context import Context
+from cython.cimports.django_templates_cythonized.formats import localize, _float_is_str_fast
 from cython.cimports.django_templates_cythonized.smartif import Literal
 
 from .base import (
@@ -391,6 +392,41 @@ class ForNode(Node):
                     needs_ctx_write = True
                     break
 
+            # Pre-classify loop body nodes for LOOPATTR optimization.
+            # For {{ loopvar.attr }} patterns, resolve item[attr] directly
+            # instead of writing to context and scanning back through dicts.
+            _ntags: list = None
+            _nattrs: list = None
+            _ntext: list = None
+            if needs_ctx_write and not unpack and not debug:
+                _ntags = [4] * num_nodes
+                _nattrs = [None] * num_nodes
+                _ntext = [None] * num_nodes
+                for j in range(num_nodes):
+                    _nd: Node = loop_nodes[j]
+                    if isinstance(_nd, TextNode):
+                        _tnd: TextNode = _nd
+                        _ntags[j] = 0
+                        _ntext[j] = _tnd.s
+                    elif isinstance(_nd, VariableNode):
+                        _ntags[j] = 1  # default: regular VAR
+                        _vnd: VariableNode = _nd
+                        _fec: FilterExpression = _vnd.filter_expression
+                        if _fec.is_var:
+                            _varc = _fec.var
+                            if not _varc.translate:
+                                _lkc = _varc.lookups
+                                if _lkc is not None and len(_lkc) == 2:
+                                    _lkt: tuple = _lkc
+                                    if _lkt[0] == loopvar0:
+                                        _nf: cython.Py_ssize_t = len(_fec.filters)
+                                        if _nf == 0:
+                                            _ntags[j] = 2  # LOOPATTR_NOFILTER
+                                            _nattrs[j] = _lkt[1]
+                                        elif _nf == 1:
+                                            _ntags[j] = 3  # LOOPATTR_FILTER
+                                            _nattrs[j] = _lkt[1]
+
             # Create forloop context. CForloopContext computes
             # counter/revcounter/first/last on demand — no dict writes per iteration.
             loop_ctx: CForloopContext = CForloopContext(len_values, parentloop)
@@ -413,6 +449,95 @@ class ForNode(Node):
                             nodelist[idx] = _render_var_with_value(
                                 inner_vnode.filter_expression, item, context
                             )
+                        idx += 1
+            elif _ntags is not None:
+                # OPTIMIZED LOOP: pre-classified LOOPATTR dispatch.
+                # For {{ book.attr }} patterns, resolve item[attr] directly
+                # instead of scanning context dicts via _render_var_fast.
+                _ae: cython.bint = context.autoescape
+                for i, item in enumerate(values):
+                    loop_ctx._i = i
+                    top[loopvar0] = item
+                    _item_is_dict: cython.bint = type(item) is dict
+                    for j in range(num_nodes):
+                        _tag: cython.int = _ntags[j]
+                        if _tag == 0:  # TextNode
+                            nodelist[idx] = _ntext[j]
+                        elif _tag == 2:  # LOOPATTR_NOFILTER
+                            if _item_is_dict:
+                                # Dict items: direct subscript, no try/except
+                                _av = item[_nattrs[j]]
+                            else:
+                                try:
+                                    _av = item[_nattrs[j]]
+                                except (TypeError, KeyError, IndexError):
+                                    try:
+                                        _av = getattr(item, _nattrs[j])
+                                    except (TypeError, AttributeError):
+                                        nodelist[idx] = loop_nodes[j].render(context)
+                                        idx += 1
+                                        continue
+                            if isinstance(_av, str):
+                                if _ae:
+                                    if isinstance(_av, SafeData):
+                                        nodelist[idx] = _av
+                                    else:
+                                        nodelist[idx] = _fast_escape(_av)
+                                else:
+                                    nodelist[idx] = _av
+                            elif isinstance(_av, int) and not isinstance(_av, bool):
+                                nodelist[idx] = str(_av)
+                            elif isinstance(_av, float):
+                                _lang = context._lang
+                                if _lang is None:
+                                    from django.utils.translation import get_language
+                                    _lang = get_language()
+                                    context._lang = _lang
+                                if _float_is_str_fast(_lang):
+                                    nodelist[idx] = str(_av)
+                                else:
+                                    nodelist[idx] = localize(
+                                        _av, use_l10n=context.use_l10n, lang=_lang
+                                    )
+                            elif callable(_av):
+                                nodelist[idx] = loop_nodes[j].render(context)
+                            else:
+                                nodelist[idx] = render_value_in_context(_av, context)
+                        elif _tag == 3:  # LOOPATTR_FILTER
+                            if _item_is_dict:
+                                _av = item[_nattrs[j]]
+                            else:
+                                try:
+                                    _av = item[_nattrs[j]]
+                                except (TypeError, KeyError, IndexError):
+                                    try:
+                                        _av = getattr(item, _nattrs[j])
+                                    except (TypeError, AttributeError):
+                                        nodelist[idx] = loop_nodes[j].render(context)
+                                        idx += 1
+                                        continue
+                            if callable(_av):
+                                nodelist[idx] = loop_nodes[j].render(context)
+                            else:
+                                _rvn: VariableNode = loop_nodes[j]
+                                result = _render_var_with_value(
+                                    _rvn.filter_expression, _av, context
+                                )
+                                if result is not None:
+                                    nodelist[idx] = result
+                                else:
+                                    nodelist[idx] = loop_nodes[j].render(context)
+                        elif _tag == 1:  # VariableNode
+                            _rvn2: VariableNode = loop_nodes[j]
+                            result = _render_var_fast(
+                                _rvn2.filter_expression, context
+                            )
+                            if result is not None:
+                                nodelist[idx] = result
+                            else:
+                                nodelist[idx] = loop_nodes[j].render(context)
+                        else:  # Other node (IfNode, CycleNode, etc.)
+                            nodelist[idx] = loop_nodes[j].render(context)
                         idx += 1
             else:
                 for i, item in enumerate(values):

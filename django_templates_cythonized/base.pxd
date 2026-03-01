@@ -54,6 +54,7 @@ cdef class VariableNode(Node):
     cpdef render(self, Context context)
 
 cpdef render_value_in_context(object value, Context context)
+cdef _fast_escape(object value)
 cdef _resolve_fe_raw(FilterExpression fe, Context context)
 cdef _render_var_fast(FilterExpression fe, Context context)
 cdef bint _fe_is_direct_loopvar(FilterExpression fe, object loopvar)
