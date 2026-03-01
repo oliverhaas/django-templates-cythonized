@@ -1,7 +1,7 @@
 [project]
 name = "django-templates-cythonized"
 version = "0.1.0a1"
-description = "Cython-accelerated Django template engine"
+description = "Cython-accelerated drop-in replacement for Django's template engine (3-13x faster)"
 readme = "README.md"
 license = "BSD-3-Clause"
 requires-python = ">=3.12"

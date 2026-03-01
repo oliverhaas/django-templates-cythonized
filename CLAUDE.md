@@ -44,7 +44,7 @@ class Variable:
 1. **`@cython.ccall` only works on `@cython.cclass` methods and module-level functions** — NOT on regular Python class methods. Attempting it causes a compiler crash: `AttributeError: 'PyObjectType' object has no attribute 'entry'`.
 
 2. **`@cython.cclass` cannot inherit from a regular Python class.** But a regular Python class CAN inherit from a `@cython.cclass`. This means:
-   - `Node` CANNOT be `@cython.cclass` (third-party tags subclass it from Python)
+   - `Node` IS `@cython.cclass`, but loop iteration variables must NOT be typed as `Node` — external custom tags inherit from Django's stock `Node`, not ours, and Cython rejects the type mismatch.
    - `Variable`, `FilterExpression` CAN be `@cython.cclass` (never subclassed externally)
 
 3. **`cpdef`/`@cython.ccall` methods cannot have `*args` or `**kwargs`.** So `BaseContext.push(*args, **kwargs)` must stay `def`.
@@ -71,6 +71,8 @@ Follow django-cachex for tooling (CI, pre-commit, ruff, mkdocs, dependabot). The
 
 ## Testing
 
+- 88 tests: 47 unit tests + 41 integration tests (all compare cythonized vs stock Django output)
+- Integration tests cover realistic templates (cycle/if/filters/forms), custom simple_tags, inclusion_tags, and custom Node subclasses
 - Tests run against both stock Django and cythonized engines (dual-engine config in `tests/settings.py`)
 - `tests/conftest.py` handles `django.setup()` manually (no pytest-django)
 - Dev dependencies are pinned with `==` — dependabot handles upgrades
