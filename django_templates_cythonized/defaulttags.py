@@ -128,7 +128,7 @@ class CycleNode(Node):
         # Pre-resolve literal cycle values for fast path
         self._preresolved = None
         self._n = len(cyclevars)
-        if not variable_name and not silent:
+        if not silent:
             pre = []
             for fe_obj in cyclevars:
                 fe: FilterExpression = fe_obj
@@ -151,11 +151,13 @@ class CycleNode(Node):
 
     @cython.ccall
     def render(self, context: Context):
-        # Fast path: pre-resolved literal strings, no variable_name
+        # Fast path: pre-resolved literal strings
         if self._preresolved is not None:
             idx: cython.Py_ssize_t = context.render_context.get(self, 0)
             context.render_context[self] = (idx + 1) % self._n
             value = self._preresolved[idx]
+            if self.variable_name:
+                context.set_upward(self.variable_name, value)
             if context.autoescape and self._needs_escape:
                 return escape(value)
             return value
@@ -623,6 +625,17 @@ class ForNode(Node):
                             else:
                                 _nattrs[j] = (None, _if_info)
 
+            # Pre-classify CycleNode for LOOPCYCLE optimization (tag 7).
+            # For cycle nodes with pre-resolved literals and `as varname`,
+            # inline the modulo counter and context write.
+            if _ntags is not None:
+                for j in range(num_nodes):
+                    if _ntags[j] == 4 and isinstance(loop_nodes[j], CycleNode):
+                        _cyc_nd: CycleNode = loop_nodes[j]
+                        if _cyc_nd._preresolved is not None:
+                            _ntags[j] = 7  # LOOPCYCLE
+                            _nattrs[j] = _cyc_nd
+
             # Create forloop context. CForloopContext computes
             # counter/revcounter/first/last on demand — no dict writes per iteration.
             loop_ctx: CForloopContext = CForloopContext(len_values, parentloop)
@@ -844,6 +857,17 @@ class ForNode(Node):
                                             break
                             if not _if_matched:
                                 nodelist[idx] = ""
+                        elif _tag == 7:  # LOOPCYCLE
+                            # Inline CycleNode: modulo counter on pre-resolved tuple.
+                            # Avoids render_context dict lookup + itertools_cycle.
+                            _cyc: CycleNode = _nattrs[j]
+                            _cyc_val = _cyc._preresolved[i % _cyc._n]
+                            if _cyc.variable_name:
+                                context.set_upward(_cyc.variable_name, _cyc_val)
+                            if _ae and _cyc._needs_escape:
+                                nodelist[idx] = escape(_cyc_val)
+                            else:
+                                nodelist[idx] = _cyc_val
                         elif _tag == 1:  # VariableNode
                             _rvn2: VariableNode = loop_nodes[j]
                             result = _render_var_fast(
@@ -853,7 +877,7 @@ class ForNode(Node):
                                 nodelist[idx] = result
                             else:
                                 nodelist[idx] = loop_nodes[j].render(context)
-                        else:  # Other node (CycleNode, etc.)
+                        else:  # Other node
                             nodelist[idx] = loop_nodes[j].render(context)
                         idx += 1
             else:
