@@ -30,9 +30,10 @@ AUTHORS = [
 ]
 
 
-def _make_books(n):
-    return [
-        {
+def _make_books(n, with_forms=False, form_renderer=None):
+    books = []
+    for i in range(n):
+        book = {
             "id": i + 1,
             "title": f"The Great Book of Everything Vol. {i + 1}",
             "author": AUTHORS[i % len(AUTHORS)],
@@ -43,8 +44,13 @@ def _make_books(n):
             "rating": (i % 5) + 1,
             "description": f"A fascinating exploration of topics in volume {i + 1}.",
         }
-        for i in range(n)
-    ]
+        if with_forms:
+            kwargs = {"renderer": form_renderer} if form_renderer else {}
+            book["order_form"] = BookOrderForm(
+                initial={"quantity": 1}, prefix=f"book_{i + 1}", **kwargs,
+            )
+        books.append(book)
+    return books
 
 
 # Template WITHOUT form widgets — pure template engine workload.
@@ -84,6 +90,8 @@ BOOKS_TEMPLATE = (
 )
 
 # Template WITH form widgets per row — tests form rendering overhead.
+# Each book carries its own order_form (accessed via book.order_form),
+# so form widgets are rendered per-row, not cached as constants.
 BOOKS_WITH_FORMS_TEMPLATE = (
     '<h1>{{ site_name }} — Book Catalog</h1>'
     '<table class="catalog">'
@@ -120,20 +128,20 @@ BOOKS_WITH_FORMS_TEMPLATE = (
     "<h3>Order: {{ book.title }}</h3>"
     '<form method="post" action="/order/{{ book.id }}/">'
     '<div class="field">'
-    "<label>{{ order_form.quantity.label }}</label>"
-    "{{ order_form.quantity }}"
+    "<label>{{ book.order_form.quantity.label }}</label>"
+    "{{ book.order_form.quantity }}"
     "</div>"
     '<div class="field">'
-    "<label>{{ order_form.notes.label }}</label>"
-    "{{ order_form.notes }}"
+    "<label>{{ book.order_form.notes.label }}</label>"
+    "{{ book.order_form.notes }}"
     "</div>"
     '<div class="field">'
-    "<label>{{ order_form.gift_wrap.label }}</label>"
-    "{{ order_form.gift_wrap }}"
+    "<label>{{ book.order_form.gift_wrap.label }}</label>"
+    "{{ book.order_form.gift_wrap }}"
     "</div>"
     '<div class="field">'
-    "<label>{{ order_form.shipping.label }}</label>"
-    "{{ order_form.shipping }}"
+    "<label>{{ book.order_form.shipping.label }}</label>"
+    "{{ book.order_form.shipping }}"
     "</div>"
     '<button type="submit">Place Order — {{ currency }}{{ book.price }}</button>'
     "</form>"
@@ -177,12 +185,12 @@ def test_stock_realistic(benchmark, stock_engine):
 
 @pytest.mark.benchmark(group="realistic_forms")
 def test_cythonized_realistic_forms(benchmark, cythonized_engine):
+    renderer = CythonizedFormRenderer()
     context = {
-        "books": _make_books(50),
+        "books": _make_books(50, with_forms=True, form_renderer=renderer),
         "show_description": True,
         "currency": "$",
         "site_name": "BookShop",
-        "order_form": BookOrderForm(renderer=CythonizedFormRenderer()),
     }
     template = cythonized_engine.from_string(BOOKS_WITH_FORMS_TEMPLATE)
     benchmark(template.render, context)
@@ -191,11 +199,10 @@ def test_cythonized_realistic_forms(benchmark, cythonized_engine):
 @pytest.mark.benchmark(group="realistic_forms")
 def test_stock_realistic_forms(benchmark, stock_engine):
     context = {
-        "books": _make_books(50),
+        "books": _make_books(50, with_forms=True),
         "show_description": True,
         "currency": "$",
         "site_name": "BookShop",
-        "order_form": BookOrderForm(),
     }
     template = stock_engine.from_string(BOOKS_WITH_FORMS_TEMPLATE)
     benchmark(template.render, context)

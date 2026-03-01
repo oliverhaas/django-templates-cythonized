@@ -25,6 +25,7 @@ TEMPLATES = [
         "OPTIONS": {
             "libraries": {
                 "custom_filters": "tests.templatetags.custom_filters",
+                "custom_tags": "tests.templatetags.custom_tags",
             },
         },
     },
@@ -35,6 +36,7 @@ TEMPLATES = [
         "OPTIONS": {
             "libraries": {
                 "custom_filters": "tests.templatetags.custom_filters",
+                "custom_tags": "tests.templatetags.custom_tags",
             },
         },
     },

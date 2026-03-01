@@ -73,7 +73,7 @@ class BaseContext:
             self.dicts.append(value)
 
     def __copy__(self):
-        duplicate = BaseContext.__new__(type(self))
+        duplicate = type(self).__new__(type(self))
         duplicate.dicts = self.dicts[:]
         return duplicate
 
@@ -208,7 +208,7 @@ class Context(BaseContext):
             self.template = None
 
     def __copy__(self):
-        duplicate = BaseContext.__new__(type(self))
+        duplicate = type(self).__new__(type(self))
         duplicate.dicts = self.dicts[:]
         duplicate.autoescape = self.autoescape
         duplicate.use_l10n = self.use_l10n
@@ -277,7 +277,7 @@ class RenderContext(BaseContext):
                 self.pop()
 
     def __copy__(self):
-        duplicate = BaseContext.__new__(type(self))
+        duplicate = type(self).__new__(type(self))
         duplicate.dicts = self.dicts[:]
         duplicate.template = self.template
         return duplicate

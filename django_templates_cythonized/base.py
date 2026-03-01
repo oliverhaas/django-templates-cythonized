@@ -1277,7 +1277,7 @@ class NodeList:
         if not debug:
             # Single-node fast path: skip list alloc + join + double SafeString wrap.
             if n == 1:
-                node: Node = nodes[0]
+                node = nodes[0]
                 if isinstance(node, TextNode):
                     tnode: TextNode = node
                     return SafeString(tnode.s)

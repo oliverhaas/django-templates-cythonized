@@ -384,7 +384,7 @@ class ForNode(Node):
             if not unpack and not debug:
                 needs_ctx_write = False
                 for j in range(num_nodes):
-                    nd: Node = loop_nodes[j]
+                    nd = loop_nodes[j]
                     if isinstance(nd, TextNode):
                         continue
                     if isinstance(nd, VariableNode):
@@ -416,7 +416,7 @@ class ForNode(Node):
                         if _cw.variable_name:
                             _loop_written_vars.add(_cw.variable_name)
                 for j in range(num_nodes):
-                    _nd: Node = loop_nodes[j]
+                    _nd = loop_nodes[j]
                     if isinstance(_nd, TextNode):
                         _tnd: TextNode = _nd
                         _ntags[j] = 0
@@ -479,7 +479,7 @@ class ForNode(Node):
                                     _tl_var_c = _tl_fe_c.var
                                     _tl_lk_c = _tl_var_c.lookups
                                     if _tl_lk_c is not None and len(_tl_lk_c) >= 1:
-                                        if _tl_lk_c[0] == loopvar0:
+                                        if _tl_lk_c[0] == loopvar0 or _tl_lk_c[0] == 'forloop':
                                             _is_const = False
                                             break
                             elif isinstance(_cond_c, Operator):
@@ -495,7 +495,7 @@ class ForNode(Node):
                                             _s_var = _s_fe.var
                                             _s_lk = _s_var.lookups
                                             if _s_lk is not None and len(_s_lk) >= 1:
-                                                if _s_lk[0] == loopvar0:
+                                                if _s_lk[0] == loopvar0 or _s_lk[0] == 'forloop':
                                                     _is_const = False
                                                     break
                                 if not _is_const:
@@ -674,7 +674,7 @@ class ForNode(Node):
                 for i, item in enumerate(values):
                     loop_ctx._i = i
                     for j in range(num_nodes):
-                        inner_node: Node = loop_nodes[j]
+                        inner_node = loop_nodes[j]
                         if isinstance(inner_node, TextNode):
                             inner_tnode: TextNode = inner_node
                             nodelist[idx] = inner_tnode.s
