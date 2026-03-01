@@ -23,7 +23,7 @@ from .safestring import SafeData, SafeString, mark_safe
 from cython.cimports.django_templates_cythonized.base import Node, TextNode, NodeList, VariableNode, FilterExpression, _fast_escape, _render_var_fast, _fe_is_direct_loopvar, _render_var_with_value, _resolve_fe_raw
 from cython.cimports.django_templates_cythonized.context import Context
 from cython.cimports.django_templates_cythonized.formats import localize, _float_is_str_fast
-from cython.cimports.django_templates_cythonized.smartif import Literal
+from cython.cimports.django_templates_cythonized.smartif import Literal, Operator, TokenBase
 
 from .base import (
     BLOCK_TAG_END,
@@ -48,7 +48,7 @@ from .base import (
 from .context import Context
 from .defaultfilters import date
 from .library import Library
-from .smartif import IfParser, Literal
+from .smartif import IfParser, Literal, OP_EQ, OP_NE, OP_GT, OP_GE, OP_LT, OP_LE
 
 register = Library()
 
@@ -395,6 +395,8 @@ class ForNode(Node):
             # Pre-classify loop body nodes for LOOPATTR optimization.
             # For {{ loopvar.attr }} patterns, resolve item[attr] directly
             # instead of writing to context and scanning back through dicts.
+            # Tag codes: 0=TEXT, 1=VAR, 2=LOOPATTR_NOFILTER, 3=LOOPATTR_FILTER,
+            #            4=OTHER, 5=LOOPIF
             _ntags: list = None
             _nattrs: list = None
             _ntext: list = None
@@ -426,6 +428,117 @@ class ForNode(Node):
                                         elif _nf == 1:
                                             _ntags[j] = 3  # LOOPATTR_FILTER
                                             _nattrs[j] = _lkt[1]
+                    elif isinstance(_nd, IfNode):
+                        # Try to classify IfNode for LOOPIF optimization.
+                        # Conditions must be simple loopvar.attr boolean or
+                        # loopvar.attr <op> literal comparisons.
+                        # Tuple format: (attr, op, rhs, nodelist_or_None, text_or_None)
+                        # When text is not None, branch result is pre-computed (single TextNode).
+                        _if_nd: IfNode = _nd
+                        _conds_nls = _if_nd.conditions_nodelists
+                        _if_info: list = []
+                        _if_ok: cython.bint = True
+                        for _cn in _conds_nls:
+                            _cond = _cn[0]
+                            _nl = _cn[1]
+                            # Pre-extract text for single-TextNode branches
+                            _br_text = None
+                            _br_nl = _nl
+                            _br_nodes: list = _nl._nodes
+                            if len(_br_nodes) == 1 and isinstance(_br_nodes[0], TextNode):
+                                _br_tnode: TextNode = _br_nodes[0]
+                                _br_text = _br_tnode.s
+                                _br_nl = None  # don't need NodeList
+                            if _cond is None:
+                                # else clause — always matches
+                                _if_info.append((None, -1, None, _br_nl, _br_text))
+                            elif isinstance(_cond, TemplateLiteral):
+                                # Simple boolean: {% if book.attr %}
+                                _tl: TemplateLiteral = _cond
+                                _tl_fe: FilterExpression = _tl.value
+                                if _tl_fe.is_var and len(_tl_fe.filters) == 0:
+                                    _tl_var = _tl_fe.var
+                                    if not _tl_var.translate:
+                                        _tl_lk = _tl_var.lookups
+                                        if _tl_lk is not None and len(_tl_lk) == 2:
+                                            _tl_lkt: tuple = _tl_lk
+                                            if _tl_lkt[0] == loopvar0:
+                                                _if_info.append((_tl_lkt[1], -1, None, _br_nl, _br_text))
+                                                continue
+                                _if_ok = False
+                                break
+                            elif isinstance(_cond, Operator):
+                                # Comparison: {% if book.attr == literal %}
+                                _op: Operator = _cond
+                                _op_code: cython.int = _op.op_code
+                                if _op_code < OP_EQ or _op_code > OP_LE:
+                                    _if_ok = False
+                                    break
+                                _op_first: TokenBase = _op.first
+                                _op_second: TokenBase = _op.second
+                                # First must be TemplateLiteral for loopvar.attr
+                                if not isinstance(_op_first, TemplateLiteral):
+                                    _if_ok = False
+                                    break
+                                _lhs_tl: TemplateLiteral = _op_first
+                                _lhs_fe: FilterExpression = _lhs_tl.value
+                                if not _lhs_fe.is_var or len(_lhs_fe.filters) != 0:
+                                    _if_ok = False
+                                    break
+                                _lhs_var = _lhs_fe.var
+                                if _lhs_var.translate:
+                                    _if_ok = False
+                                    break
+                                _lhs_lk = _lhs_var.lookups
+                                if _lhs_lk is None or len(_lhs_lk) != 2:
+                                    _if_ok = False
+                                    break
+                                _lhs_lkt: tuple = _lhs_lk
+                                if _lhs_lkt[0] != loopvar0:
+                                    _if_ok = False
+                                    break
+                                # Second must be TemplateLiteral with a literal value (no Variable lookup)
+                                if not isinstance(_op_second, TemplateLiteral):
+                                    _if_ok = False
+                                    break
+                                _rhs_tl: TemplateLiteral = _op_second
+                                _rhs_fe: FilterExpression = _rhs_tl.value
+                                if _rhs_fe.is_var:
+                                    _rhs_var = _rhs_fe.var
+                                    if _rhs_var.lookups is not None:
+                                        _if_ok = False
+                                        break
+                                    _rhs_val = _rhs_var.literal
+                                else:
+                                    _rhs_val = _rhs_fe.var
+                                if len(_rhs_fe.filters) != 0:
+                                    _if_ok = False
+                                    break
+                                _if_info.append((_lhs_lkt[1], _op_code, _rhs_val, _br_nl, _br_text))
+                            else:
+                                _if_ok = False
+                                break
+                        if _if_ok and len(_if_info) > 0:
+                            # Check if all conditions reference the same attr
+                            # (common for {% if x.a == 1 %}{% elif x.a == 2 %}...)
+                            # If so, resolve attr once and reuse for all comparisons.
+                            _same_attr = None
+                            _all_same: cython.bint = True
+                            for _ie in _if_info:
+                                _ie_attr = _ie[0]
+                                if _ie_attr is None:
+                                    continue  # else clause
+                                if _same_attr is None:
+                                    _same_attr = _ie_attr
+                                elif _ie_attr != _same_attr:
+                                    _all_same = False
+                                    break
+                            _ntags[j] = 5  # LOOPIF
+                            # Store (same_attr_or_None, conditions_list)
+                            if _all_same and _same_attr is not None:
+                                _nattrs[j] = (_same_attr, _if_info)
+                            else:
+                                _nattrs[j] = (None, _if_info)
 
             # Create forloop context. CForloopContext computes
             # counter/revcounter/first/last on demand — no dict writes per iteration.
@@ -527,6 +640,124 @@ class ForNode(Node):
                                     nodelist[idx] = result
                                 else:
                                     nodelist[idx] = loop_nodes[j].render(context)
+                        elif _tag == 5:  # LOOPIF
+                            # Inline IfNode condition evaluation for loopvar.attr patterns.
+                            # Resolves item[attr] directly instead of going through
+                            # condition.eval → TemplateLiteral.eval → _resolve_fe_raw.
+                            _if_data = _nattrs[j]
+                            _if_same_attr = _if_data[0]
+                            _if_info = _if_data[1]
+                            _if_matched: cython.bint = False
+                            # If all conditions reference same attr, resolve once
+                            if _if_same_attr is not None:
+                                if _item_is_dict:
+                                    _if_val = item[_if_same_attr]
+                                else:
+                                    try:
+                                        _if_val = item[_if_same_attr]
+                                    except (TypeError, KeyError, IndexError):
+                                        try:
+                                            _if_val = getattr(item, _if_same_attr)
+                                        except (TypeError, AttributeError):
+                                            _if_val = None
+                                for _if_entry in _if_info:
+                                    _if_op: cython.int = _if_entry[1]
+                                    _if_rhs = _if_entry[2]
+                                    _if_br_nl = _if_entry[3]
+                                    _if_br_text = _if_entry[4]
+                                    if _if_entry[0] is None:
+                                        # else clause
+                                        if _if_br_text is not None:
+                                            nodelist[idx] = _if_br_text
+                                        else:
+                                            nodelist[idx] = _if_br_nl.render(context)
+                                        _if_matched = True
+                                        break
+                                    if _if_op == -1:
+                                        if _if_val:
+                                            if _if_br_text is not None:
+                                                nodelist[idx] = _if_br_text
+                                            else:
+                                                nodelist[idx] = _if_br_nl.render(context)
+                                            _if_matched = True
+                                            break
+                                    else:
+                                        _cmp_ok: cython.bint = False
+                                        if _if_op == OP_EQ:
+                                            _cmp_ok = _if_val == _if_rhs
+                                        elif _if_op == OP_NE:
+                                            _cmp_ok = _if_val != _if_rhs
+                                        elif _if_op == OP_GT:
+                                            _cmp_ok = _if_val > _if_rhs
+                                        elif _if_op == OP_GE:
+                                            _cmp_ok = _if_val >= _if_rhs
+                                        elif _if_op == OP_LT:
+                                            _cmp_ok = _if_val < _if_rhs
+                                        elif _if_op == OP_LE:
+                                            _cmp_ok = _if_val <= _if_rhs
+                                        if _cmp_ok:
+                                            if _if_br_text is not None:
+                                                nodelist[idx] = _if_br_text
+                                            else:
+                                                nodelist[idx] = _if_br_nl.render(context)
+                                            _if_matched = True
+                                            break
+                            else:
+                                # Different attrs per condition — resolve each
+                                for _if_entry in _if_info:
+                                    _if_attr = _if_entry[0]
+                                    _if_op = _if_entry[1]
+                                    _if_rhs = _if_entry[2]
+                                    _if_br_nl = _if_entry[3]
+                                    _if_br_text = _if_entry[4]
+                                    if _if_attr is None:
+                                        if _if_br_text is not None:
+                                            nodelist[idx] = _if_br_text
+                                        else:
+                                            nodelist[idx] = _if_br_nl.render(context)
+                                        _if_matched = True
+                                        break
+                                    if _item_is_dict:
+                                        _if_val = item[_if_attr]
+                                    else:
+                                        try:
+                                            _if_val = item[_if_attr]
+                                        except (TypeError, KeyError, IndexError):
+                                            try:
+                                                _if_val = getattr(item, _if_attr)
+                                            except (TypeError, AttributeError):
+                                                _if_val = None
+                                    if _if_op == -1:
+                                        if _if_val:
+                                            if _if_br_text is not None:
+                                                nodelist[idx] = _if_br_text
+                                            else:
+                                                nodelist[idx] = _if_br_nl.render(context)
+                                            _if_matched = True
+                                            break
+                                    else:
+                                        _cmp_ok = False
+                                        if _if_op == OP_EQ:
+                                            _cmp_ok = _if_val == _if_rhs
+                                        elif _if_op == OP_NE:
+                                            _cmp_ok = _if_val != _if_rhs
+                                        elif _if_op == OP_GT:
+                                            _cmp_ok = _if_val > _if_rhs
+                                        elif _if_op == OP_GE:
+                                            _cmp_ok = _if_val >= _if_rhs
+                                        elif _if_op == OP_LT:
+                                            _cmp_ok = _if_val < _if_rhs
+                                        elif _if_op == OP_LE:
+                                            _cmp_ok = _if_val <= _if_rhs
+                                        if _cmp_ok:
+                                            if _if_br_text is not None:
+                                                nodelist[idx] = _if_br_text
+                                            else:
+                                                nodelist[idx] = _if_br_nl.render(context)
+                                            _if_matched = True
+                                            break
+                            if not _if_matched:
+                                nodelist[idx] = ""
                         elif _tag == 1:  # VariableNode
                             _rvn2: VariableNode = loop_nodes[j]
                             result = _render_var_fast(
@@ -536,7 +767,7 @@ class ForNode(Node):
                                 nodelist[idx] = result
                             else:
                                 nodelist[idx] = loop_nodes[j].render(context)
-                        else:  # Other node (IfNode, CycleNode, etc.)
+                        else:  # Other node (CycleNode, etc.)
                             nodelist[idx] = loop_nodes[j].render(context)
                         idx += 1
             else:
