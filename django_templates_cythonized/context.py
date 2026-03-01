@@ -15,7 +15,7 @@ def _context_lookup(dicts: list, key):
     """C-level reverse dict scan — no Python frame overhead."""
     i: cython.int
     for i in range(len(dicts) - 1, -1, -1):
-        d = dicts[i]
+        d: dict = dicts[i]
         if key in d:
             return d[key]
     return _MISSING
@@ -28,9 +28,10 @@ class ContextPopException(Exception):
 
 
 class ContextDict(dict):
+    """Legacy ContextDict — kept for backwards compatibility but no longer used
+    internally. Our push() now uses plain dicts + _PushPopCtx."""
     def __init__(self, context, *args, **kwargs):
         super().__init__(*args, **kwargs)
-
         context.dicts.append(self)
         self.context = context
 
@@ -39,6 +40,23 @@ class ContextDict(dict):
 
     def __exit__(self, *args, **kwargs):
         self.context.pop()
+
+
+@cython.cclass
+class _PushPopCtx:
+    """Lightweight C-level context manager for push/pop.
+    Unlike ContextDict, this doesn't subclass dict — the pushed dict
+    is a plain dict, enabling d: dict typing in hot loops."""
+    cython.declare(_dicts=list)
+
+    def __init__(self, dicts: list):
+        self._dicts = dicts
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args, **kwargs):
+        self._dicts.pop()
 
 
 @cython.cclass
@@ -66,13 +84,18 @@ class BaseContext:
         return reversed(self.dicts)
 
     def push(self, *args, **kwargs):
-        dicts = []
+        # Merge all args into a single plain dict (not ContextDict subclass).
+        merged = {}
         for d in args:
             if isinstance(d, BaseContext):
-                dicts += d.dicts[1:]
+                for sub_d in d.dicts[1:]:
+                    merged.update(sub_d)
             else:
-                dicts.append(d)
-        return ContextDict(self, *dicts, **kwargs)
+                merged.update(d)
+        if kwargs:
+            merged.update(kwargs)
+        self.dicts.append(merged)
+        return _PushPopCtx(self.dicts)
 
     def pop(self):
         if len(self.dicts) == 1:
@@ -202,7 +225,8 @@ class Context(BaseContext):
             raise TypeError("other_dict must be a mapping (dictionary-like) object.")
         if isinstance(other_dict, BaseContext):
             other_dict = other_dict.dicts[1:].pop()
-        return ContextDict(self, other_dict)
+        self.dicts.append(dict(other_dict))
+        return _PushPopCtx(self.dicts)
 
 
 @cython.cclass

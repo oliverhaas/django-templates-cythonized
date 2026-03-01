@@ -332,7 +332,7 @@ class ForNode(Node):
             debug = tmpl is not None and tmpl.engine.debug
             # Cache top context dict for fast single-variable assignment
             _dicts = context.dicts
-            top = _dicts[len(_dicts) - 1]
+            top: dict = _dicts[len(_dicts) - 1]
             loopvar0 = self.loopvars[0] if not unpack else None
 
             # Pre-scan loop body: check if we can bypass context writes entirely.

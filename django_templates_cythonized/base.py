@@ -1372,7 +1372,7 @@ def render_value_in_context(value, context: Context):
         context._lang = lang
     value = localize(value, use_l10n=context.use_l10n, lang=lang)
     if context.autoescape:
-        if not issubclass(type(value), str):
+        if not isinstance(value, str):
             value = str(value)
         if isinstance(value, SafeData):
             return value
@@ -1426,7 +1426,7 @@ def _resolve_fe_raw(fe: FilterExpression, context: Context):
     i: cython.Py_ssize_t
     value = _RESOLVE_FALLBACK
     for i in range(n_dicts - 1, -1, -1):
-        d = dicts[i]
+        d: dict = dicts[i]
         if key in d:
             value = d[key]
             break
@@ -1506,7 +1506,7 @@ def _render_var_fast(fe: FilterExpression, context: Context):
         value = None
         found: cython.bint = False
         for i in range(n_dicts - 1, -1, -1):
-            d = dicts[i]
+            d: dict = dicts[i]
             if key in d:
                 value = d[key]
                 found = True
@@ -1549,23 +1549,29 @@ def _render_var_fast(fe: FilterExpression, context: Context):
             elif fast_code == FFILTER_CAPFIRST:
                 value = value[0].upper() + value[1:] if value else value
             # FFILTER_STRINGFORMAT_S: str(value) already done above
-            if is_safe and was_safe:
-                value = mark_safe(value)
+            # Value is guaranteed str here — return directly, skip redundant isinstance chain
+            if context.autoescape:
+                if is_safe and was_safe:
+                    return value
+                return _fast_escape(value)
+            return value
         else:
             # f_tuple = (func, args, expects_localtime, needs_autoescape, is_safe)
             f_args: list = f_tuple[1]
             if len(f_args) != 0 or f_tuple[2] or f_tuple[3]:
                 return None
-            is_safe = f_tuple[4]
-            was_safe = isinstance(value, SafeData)
             func = f_tuple[0]
             value = func(value)
-            if is_safe and was_safe:
-                value = mark_safe(value)
+            # Generic filter may return non-str; check and return directly if str
+            if isinstance(value, str):
+                if context.autoescape:
+                    if isinstance(value, SafeData):
+                        return value
+                    return _fast_escape(value)
+                return value
+            # Non-str filter result: fall through to type-specific paths below
 
     # Inline render_value_in_context for string values (the common case).
-    # Return plain escaped str, NOT SafeString — callers already wrap the
-    # final join with SafeString/mark_safe.
     if isinstance(value, str):
         if context.autoescape:
             if isinstance(value, SafeData):
@@ -1648,19 +1654,25 @@ def _render_var_with_value(fe: FilterExpression, value, context: Context):
                 value = value.upper()
             elif fast_code == FFILTER_CAPFIRST:
                 value = value[0].upper() + value[1:] if value else value
-            # FFILTER_STRINGFORMAT_S: str(value) already done above
-            if is_safe and was_safe:
-                value = mark_safe(value)
+            # Value is guaranteed str — return directly
+            if context.autoescape:
+                if is_safe and was_safe:
+                    return value
+                return _fast_escape(value)
+            return value
         else:
             f_args: list = f_tuple[1]
             if len(f_args) != 0 or f_tuple[2] or f_tuple[3]:
                 return None
-            is_safe = f_tuple[4]
-            was_safe = isinstance(value, SafeData)
             func = f_tuple[0]
             value = func(value)
-            if is_safe and was_safe:
-                value = mark_safe(value)
+            if isinstance(value, str):
+                if context.autoescape:
+                    if isinstance(value, SafeData):
+                        return value
+                    return _fast_escape(value)
+                return value
+            # Non-str filter result: fall through
 
     # Inline render_value_in_context
     if isinstance(value, str):
