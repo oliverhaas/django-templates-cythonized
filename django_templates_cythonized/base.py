@@ -781,6 +781,18 @@ filter_re = _lazy_re_compile(filter_raw_string, re.VERBOSE)
 
 
 @cython.cclass
+class CFilterInfo:
+    """C struct wrapper for filter metadata — replaces 5-tuple for C struct access."""
+
+    def __init__(self, func, args, expects_localtime, needs_autoescape, is_safe):
+        self.func = func
+        self.args = args
+        self.expects_localtime = expects_localtime
+        self.needs_autoescape = needs_autoescape
+        self.is_safe = is_safe
+
+
+@cython.cclass
 class FilterExpression:
     """
     Parse a variable token and its optional filters (all as a single string),
@@ -837,7 +849,7 @@ class FilterExpression:
                     args.append((True, Variable(var_arg)))
                 filter_func = parser.find_filter(filter_name)
                 self.args_check(filter_name, filter_func, args)
-                filters.append((
+                filters.append(CFilterInfo(
                     filter_func,
                     args,
                     getattr(filter_func, "expects_localtime", False),
@@ -856,14 +868,14 @@ class FilterExpression:
         self.is_var = isinstance(var_obj, Variable)
         self._fast_filter = 0
         if len(filters) == 1:
-            f = filters[0]
-            if not f[2] and not f[3]:  # no expects_localtime, no needs_autoescape
-                f_args = f[1]
+            fi: CFilterInfo = filters[0]
+            if not fi.expects_localtime and not fi.needs_autoescape:
+                f_args = fi.args
                 if len(f_args) == 0:
-                    self._fast_filter = getattr(f[0], '_cython_fast_code', 0)
+                    self._fast_filter = getattr(fi.func, '_cython_fast_code', 0)
                 elif (len(f_args) == 1 and not f_args[0][0]
                       and f_args[0][1] == 's'
-                      and getattr(f[0], '_cython_fast_code', 0) == FFILTER_STRINGFORMAT_S):
+                      and getattr(fi.func, '_cython_fast_code', 0) == FFILTER_STRINGFORMAT_S):
                     # stringformat:'s' — str(value)
                     self._fast_filter = FFILTER_STRINGFORMAT_S
 
@@ -886,20 +898,21 @@ class FilterExpression:
                         obj = string_if_invalid
         else:
             obj = self.var
-        for func, args, expects_localtime, needs_autoescape, is_safe in self.filters:
+        fi: CFilterInfo
+        for fi in self.filters:
             arg_vals = []
-            for lookup, arg in args:
+            for lookup, arg in fi.args:
                 if not lookup:
                     arg_vals.append(mark_safe(arg))
                 else:
                     arg_vals.append(arg.resolve(context))
-            if expects_localtime:
+            if fi.expects_localtime:
                 obj = template_localtime(obj, context.use_tz)
-            if needs_autoescape:
-                new_obj = func(obj, autoescape=context.autoescape, *arg_vals)
+            if fi.needs_autoescape:
+                new_obj = fi.func(obj, autoescape=context.autoescape, *arg_vals)
             else:
-                new_obj = func(obj, *arg_vals)
-            if is_safe and isinstance(obj, SafeData):
+                new_obj = fi.func(obj, *arg_vals)
+            if fi.is_safe and isinstance(obj, SafeData):
                 obj = mark_safe(new_obj)
             else:
                 obj = new_obj
@@ -1534,11 +1547,11 @@ def _render_var_fast(fe: FilterExpression, context: Context):
 
     # Apply single filter if present
     if n_filters == 1:
-        f_tuple = filters[0]
+        fi: CFilterInfo = filters[0]
         fast_code: cython.int = fe._fast_filter
         if fast_code != 0:
             # C-level dispatch — bypass Python function call + @stringfilter wrapper
-            is_safe: cython.bint = f_tuple[4]
+            is_safe: cython.bint = fi.is_safe
             was_safe: cython.bint = isinstance(value, SafeData)
             if not isinstance(value, str):
                 value = str(value)
@@ -1556,11 +1569,10 @@ def _render_var_fast(fe: FilterExpression, context: Context):
                 return _fast_escape(value)
             return value
         else:
-            # f_tuple = (func, args, expects_localtime, needs_autoescape, is_safe)
-            f_args: list = f_tuple[1]
-            if len(f_args) != 0 or f_tuple[2] or f_tuple[3]:
+            f_args: list = fi.args
+            if len(f_args) != 0 or fi.expects_localtime or fi.needs_autoescape:
                 return None
-            func = f_tuple[0]
+            func = fi.func
             value = func(value)
             # Generic filter may return non-str; check and return directly if str
             if isinstance(value, str):
@@ -1620,8 +1632,8 @@ def _fe_is_direct_loopvar(fe: FilterExpression, loopvar):
     if n_filters > 1:
         return False
     if n_filters == 1:
-        f = fe.filters[0]
-        if len(f[1]) != 0 or f[2] or f[3]:
+        f: CFilterInfo = fe.filters[0]
+        if len(f.args) != 0 or f.expects_localtime or f.needs_autoescape:
             return False
     return True
 
@@ -1641,10 +1653,10 @@ def _render_var_with_value(fe: FilterExpression, value, context: Context):
 
     # Apply single filter if present
     if n_filters == 1:
-        f_tuple = filters[0]
+        fi: CFilterInfo = filters[0]
         fast_code: cython.int = fe._fast_filter
         if fast_code != 0:
-            is_safe: cython.bint = f_tuple[4]
+            is_safe: cython.bint = fi.is_safe
             was_safe: cython.bint = isinstance(value, SafeData)
             if not isinstance(value, str):
                 value = str(value)
@@ -1661,10 +1673,10 @@ def _render_var_with_value(fe: FilterExpression, value, context: Context):
                 return _fast_escape(value)
             return value
         else:
-            f_args: list = f_tuple[1]
-            if len(f_args) != 0 or f_tuple[2] or f_tuple[3]:
+            f_args: list = fi.args
+            if len(f_args) != 0 or fi.expects_localtime or fi.needs_autoescape:
                 return None
-            func = f_tuple[0]
+            func = fi.func
             value = func(value)
             if isinstance(value, str):
                 if context.autoescape:

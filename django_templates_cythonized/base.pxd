@@ -5,6 +5,13 @@
 
 from django_templates_cythonized.context cimport Context
 
+cdef class CFilterInfo:
+    cdef public object func
+    cdef public list args
+    cdef public bint expects_localtime
+    cdef public bint needs_autoescape
+    cdef public bint is_safe
+
 cdef class Node:
     cdef public object token
     cdef public object origin
