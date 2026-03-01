@@ -406,6 +406,15 @@ class ForNode(Node):
                 _ntags = [4] * num_nodes
                 _nattrs = [None] * num_nodes
                 _ntext = [None] * num_nodes
+                # Collect variable names written by loop body nodes (e.g. cycle's "as rowclass").
+                # These must NOT be cached as constants.
+                _loop_written_vars: set = set()
+                for j in range(num_nodes):
+                    _nd_w = loop_nodes[j]
+                    if isinstance(_nd_w, CycleNode):
+                        _cw: CycleNode = _nd_w
+                        if _cw.variable_name:
+                            _loop_written_vars.add(_cw.variable_name)
                 for j in range(num_nodes):
                     _nd: Node = loop_nodes[j]
                     if isinstance(_nd, TextNode):
@@ -447,7 +456,7 @@ class ForNode(Node):
                                         elif _fl_attr == 'revcounter0':
                                             _ntags[j] = 8
                                             _nattrs[j] = -2  # signal for revcounter0
-                                    elif _lkc[0] != 'forloop':
+                                    elif _lkc[0] != 'forloop' and _lkc[0] not in _loop_written_vars:
                                         # Non-loop variable (e.g. {{ currency }}) —
                                         # render once and cache as text.
                                         _ntags[j] = 0
