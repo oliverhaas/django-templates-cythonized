@@ -418,16 +418,22 @@ class ForNode(Node):
                             _varc = _fec.var
                             if not _varc.translate:
                                 _lkc = _varc.lookups
-                                if _lkc is not None and len(_lkc) == 2:
-                                    _lkt: tuple = _lkc
-                                    if _lkt[0] == loopvar0:
-                                        _nf: cython.Py_ssize_t = len(_fec.filters)
-                                        if _nf == 0:
-                                            _ntags[j] = 2  # LOOPATTR_NOFILTER
-                                            _nattrs[j] = _lkt[1]
-                                        elif _nf == 1:
-                                            _ntags[j] = 3  # LOOPATTR_FILTER
-                                            _nattrs[j] = _lkt[1]
+                                if _lkc is not None and len(_lkc) >= 1:
+                                    if _lkc[0] == loopvar0:
+                                        if len(_lkc) == 2:
+                                            _lkt: tuple = _lkc
+                                            _nf: cython.Py_ssize_t = len(_fec.filters)
+                                            if _nf == 0:
+                                                _ntags[j] = 2  # LOOPATTR_NOFILTER
+                                                _nattrs[j] = _lkt[1]
+                                            elif _nf == 1:
+                                                _ntags[j] = 3  # LOOPATTR_FILTER
+                                                _nattrs[j] = _lkt[1]
+                                    elif _lkc[0] != 'forloop':
+                                        # Non-loop variable (e.g. {{ currency }}) —
+                                        # render once and cache as text.
+                                        _ntags[j] = 0
+                                        _ntext[j] = _vnd.render(context)
                     elif isinstance(_nd, IfNode):
                         # First try LOOPIF_CONST: if conditions don't reference
                         # the loop variable, evaluate once and pre-determine the branch.
