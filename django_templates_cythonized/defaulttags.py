@@ -429,6 +429,83 @@ class ForNode(Node):
                                             _ntags[j] = 3  # LOOPATTR_FILTER
                                             _nattrs[j] = _lkt[1]
                     elif isinstance(_nd, IfNode):
+                        # First try LOOPIF_CONST: if conditions don't reference
+                        # the loop variable, evaluate once and pre-determine the branch.
+                        # Tag code 6 = LOOPIF_CONST.
+                        _if_nd_c: IfNode = _nd
+                        _is_const: cython.bint = True
+                        for _cn_c in _if_nd_c.conditions_nodelists:
+                            _cond_c = _cn_c[0]
+                            if _cond_c is None:
+                                continue  # else clause
+                            # Check if condition references the loop variable
+                            if isinstance(_cond_c, TemplateLiteral):
+                                _tl_c: TemplateLiteral = _cond_c
+                                _tl_fe_c: FilterExpression = _tl_c.value
+                                if _tl_fe_c.is_var:
+                                    _tl_var_c = _tl_fe_c.var
+                                    _tl_lk_c = _tl_var_c.lookups
+                                    if _tl_lk_c is not None and len(_tl_lk_c) >= 1:
+                                        if _tl_lk_c[0] == loopvar0:
+                                            _is_const = False
+                                            break
+                            elif isinstance(_cond_c, Operator):
+                                # For operators, check both sides
+                                _op_c: Operator = _cond_c
+                                _op_first_c: TokenBase = _op_c.first
+                                _op_second_c: TokenBase = _op_c.second
+                                for _side_c in (_op_first_c, _op_second_c):
+                                    if _side_c is not None and isinstance(_side_c, TemplateLiteral):
+                                        _s_tl: TemplateLiteral = _side_c
+                                        _s_fe: FilterExpression = _s_tl.value
+                                        if _s_fe.is_var:
+                                            _s_var = _s_fe.var
+                                            _s_lk = _s_var.lookups
+                                            if _s_lk is not None and len(_s_lk) >= 1:
+                                                if _s_lk[0] == loopvar0:
+                                                    _is_const = False
+                                                    break
+                                if not _is_const:
+                                    break
+                            else:
+                                _is_const = False
+                                break
+                        if _is_const:
+                            # Condition doesn't reference loop var — evaluate once.
+                            # Find the matching branch.
+                            _const_nl = None
+                            for _cn_c2 in _if_nd_c.conditions_nodelists:
+                                _cond_c2 = _cn_c2[0]
+                                _nl_c2 = _cn_c2[1]
+                                if _cond_c2 is None:
+                                    _const_nl = _nl_c2
+                                    break
+                                try:
+                                    _const_match = _cond_c2.eval(context)
+                                except Exception:
+                                    _const_match = None
+                                if _const_match:
+                                    _const_nl = _nl_c2
+                                    break
+                            if _const_nl is None:
+                                # No branch matches — always produces ""
+                                _ntags[j] = 0  # treat like TextNode
+                                _ntext[j] = ""
+                            else:
+                                # Check if the matching branch is pure text
+                                _cnl_nodes: list = _const_nl._nodes
+                                if len(_cnl_nodes) == 0:
+                                    _ntags[j] = 0
+                                    _ntext[j] = ""
+                                elif len(_cnl_nodes) == 1 and isinstance(_cnl_nodes[0], TextNode):
+                                    _cnl_tnode: TextNode = _cnl_nodes[0]
+                                    _ntags[j] = 0
+                                    _ntext[j] = _cnl_tnode.s
+                                else:
+                                    # Branch has dynamic content — tag 6 with NodeList
+                                    _ntags[j] = 6
+                                    _nattrs[j] = _const_nl
+                            continue  # skip LOOPIF classification below
                         # Try to classify IfNode for LOOPIF optimization.
                         # Conditions must be simple loopvar.attr boolean or
                         # loopvar.attr <op> literal comparisons.
@@ -574,8 +651,11 @@ class ForNode(Node):
                     _item_is_dict: cython.bint = type(item) is dict
                     for j in range(num_nodes):
                         _tag: cython.int = _ntags[j]
-                        if _tag == 0:  # TextNode
+                        if _tag == 0:  # TextNode (or LOOPIF_CONST folded to text)
                             nodelist[idx] = _ntext[j]
+                        elif _tag == 6:  # LOOPIF_CONST with dynamic branch
+                            _const_nl_r: NodeList = _nattrs[j]
+                            nodelist[idx] = _const_nl_r.render(context)
                         elif _tag == 2:  # LOOPATTR_NOFILTER
                             if _item_is_dict:
                                 # Dict items: direct subscript, no try/except
