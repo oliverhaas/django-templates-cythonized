@@ -431,6 +431,22 @@ class ForNode(Node):
                                             elif _nf == 1:
                                                 _ntags[j] = 3  # LOOPATTR_FILTER
                                                 _nattrs[j] = _lkt[1]
+                                    elif _lkc[0] == 'forloop' and len(_lkc) == 2 and len(_fec.filters) == 0:
+                                        # {{ forloop.counter }}, {{ forloop.counter0 }}, etc.
+                                        # Use loop_ctx directly instead of context dict scan.
+                                        _fl_attr = _lkc[1]
+                                        if _fl_attr == 'counter':
+                                            _ntags[j] = 8
+                                            _nattrs[j] = 1  # offset from _i
+                                        elif _fl_attr == 'counter0':
+                                            _ntags[j] = 8
+                                            _nattrs[j] = 0
+                                        elif _fl_attr == 'revcounter':
+                                            _ntags[j] = 8
+                                            _nattrs[j] = -1  # signal for revcounter
+                                        elif _fl_attr == 'revcounter0':
+                                            _ntags[j] = 8
+                                            _nattrs[j] = -2  # signal for revcounter0
                                     elif _lkc[0] != 'forloop':
                                         # Non-loop variable (e.g. {{ currency }}) —
                                         # render once and cache as text.
@@ -863,11 +879,21 @@ class ForNode(Node):
                             _cyc: CycleNode = _nattrs[j]
                             _cyc_val = _cyc._preresolved[i % _cyc._n]
                             if _cyc.variable_name:
-                                context.set_upward(_cyc.variable_name, _cyc_val)
+                                # Write to top dict directly (avoids set_upward's
+                                # O(n_dicts) scan — cycle var is always in top dict)
+                                top[_cyc.variable_name] = _cyc_val
                             if _ae and _cyc._needs_escape:
                                 nodelist[idx] = escape(_cyc_val)
                             else:
                                 nodelist[idx] = _cyc_val
+                        elif _tag == 8:  # FORLOOP_COUNTER
+                            _fl_code: cython.int = _nattrs[j]
+                            if _fl_code >= 0:
+                                nodelist[idx] = str(i + _fl_code)
+                            elif _fl_code == -1:
+                                nodelist[idx] = str(len_values - i)
+                            else:
+                                nodelist[idx] = str(len_values - i - 1)
                         elif _tag == 1:  # VariableNode
                             _rvn2: VariableNode = loop_nodes[j]
                             result = _render_var_fast(
