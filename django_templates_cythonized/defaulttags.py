@@ -116,14 +116,49 @@ class CycleNode(Node):
     cyclevars = cython.declare(list, visibility='public')
     variable_name = cython.declare(object, visibility='public')
     silent = cython.declare(cython.bint, visibility='public')
+    _preresolved = cython.declare(tuple, visibility='public')
+    _n = cython.declare(cython.Py_ssize_t, visibility='public')
+    _needs_escape = cython.declare(cython.bint, visibility='public')
 
     def __init__(self, cyclevars, variable_name=None, silent=False):
         self.cyclevars = cyclevars
         self.variable_name = variable_name
         self.silent = silent
+        # Pre-resolve literal cycle values for fast path
+        self._preresolved = None
+        self._n = len(cyclevars)
+        if not variable_name and not silent:
+            pre = []
+            for fe_obj in cyclevars:
+                fe: FilterExpression = fe_obj
+                if not fe.is_var and len(fe.filters) == 0 and isinstance(fe.var, str):
+                    pre.append(fe.var)
+                else:
+                    break
+            if len(pre) == self._n:
+                self._preresolved = tuple(pre)
+                # Check if any value needs HTML escaping
+                self._needs_escape = False
+                c: cython.Py_UCS4
+                for s in pre:
+                    for c in s:
+                        if c == 60 or c == 62 or c == 38 or c == 34 or c == 39:
+                            self._needs_escape = True
+                            break
+                    if self._needs_escape:
+                        break
 
     @cython.ccall
     def render(self, context: Context):
+        # Fast path: pre-resolved literal strings, no variable_name
+        if self._preresolved is not None:
+            idx: cython.Py_ssize_t = context.render_context.get(self, 0)
+            context.render_context[self] = (idx + 1) % self._n
+            value = self._preresolved[idx]
+            if context.autoescape and self._needs_escape:
+                return escape(value)
+            return value
+        # General path
         if self not in context.render_context:
             # First time the node is rendered in template
             context.render_context[self] = itertools_cycle(self.cyclevars)
@@ -140,7 +175,10 @@ class CycleNode(Node):
         """
         Reset the cycle iteration back to the beginning.
         """
-        context.render_context[self] = itertools_cycle(self.cyclevars)
+        if self._preresolved is not None:
+            context.render_context[self] = 0
+        else:
+            context.render_context[self] = itertools_cycle(self.cyclevars)
 
 
 @cython.cclass
