@@ -49,7 +49,7 @@ def conditional_escape(text):
         return text
     if hasattr(text, "__html__"):
         return text.__html__()
-    return _fast_escape_str(str(text))
+    return SafeString(_fast_escape_str(str(text)))
 
 
 def format_html(format_string, *args, **kwargs):

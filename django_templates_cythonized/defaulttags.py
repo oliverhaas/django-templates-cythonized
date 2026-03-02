@@ -1548,8 +1548,8 @@ def do_filter(parser, token):
     # variable as arguments.
     _, rest = token.contents.split(None, 1)
     filter_expr = parser.compile_filter("var|%s" % (rest))
-    for func, unused in filter_expr.filters:
-        filter_name = getattr(func, "_filter_name", None)
+    for fi in filter_expr.filters:
+        filter_name = getattr(fi.func, "_filter_name", None)
         if filter_name in ("escape", "safe"):
             raise TemplateSyntaxError(
                 '"filter %s" is not permitted. Use the "autoescape" tag instead.'
