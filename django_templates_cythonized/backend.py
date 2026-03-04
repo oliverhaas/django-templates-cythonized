@@ -1,9 +1,13 @@
+import threading
+
 from django.forms.renderers import BaseRenderer, EngineMixin
 from django.template import TemplateDoesNotExist
 from django.template.backends.django import DjangoTemplates
 
 from .context import Context, make_context
 from .engine import Engine
+
+_form_ctx_local = threading.local()
 
 
 class CythonizedTemplates(DjangoTemplates):
@@ -72,20 +76,20 @@ class CythonizedFormRenderer(EngineMixin, BaseRenderer):
     """Form renderer that uses our cythonized template engine for widgets.
 
     Bypasses per-widget make_context + Context creation overhead by reusing
-    one Context and pushing/popping the widget dict. Template caching is
-    handled by Engine.get_template() and CythonizedTemplates.get_template().
+    one Context per thread and pushing/popping the widget dict. Template
+    caching is handled by Engine.get_template() and
+    CythonizedTemplates.get_template().
     """
 
     backend = CythonizedTemplates
-    _ctx = None
 
     def render(self, template_name, context, request=None):
         tpl = self.get_template(template_name).template
 
-        ctx = self._ctx
+        ctx = getattr(_form_ctx_local, "ctx", None)
         if ctx is None:
             ctx = Context(autoescape=True)
-            self._ctx = ctx
+            _form_ctx_local.ctx = ctx
 
         ctx.dicts.append(context)
         try:
