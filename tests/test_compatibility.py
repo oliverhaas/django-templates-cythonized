@@ -1664,3 +1664,554 @@ class TestUseThousandSeparator:
                {"items": [{"price": 1234567}, {"price": 42}, {"price": 100000}]})
         finally:
             fmt._use_thousand_sep = old_val
+
+
+# ---------------------------------------------------------------------------
+# Production-readiness tests — critical features, regression tests for bug fixes
+# ---------------------------------------------------------------------------
+
+class TestLoopIfConstNestedOperators:
+    """Regression tests for LOOPIF_CONST with compound and/or/not conditions.
+
+    Bug: nested Operator trees were not recursively inspected for loop variable
+    references. A condition like `{% if flag and book.active %}` could be
+    incorrectly classified as constant when `book` is the loop variable.
+    """
+
+    def test_compound_and_with_loop_var(self, stock, cyth):
+        """{% if const_flag and item.attr %} must NOT be treated as constant."""
+        _m(stock, cyth,
+           "{% for item in items %}"
+           "{% if show and item.active %}Y{% else %}N{% endif %}"
+           "{% endfor %}",
+           {"items": [{"active": True}, {"active": False}, {"active": True}],
+            "show": True})
+
+    def test_compound_or_with_loop_var(self, stock, cyth):
+        """{% if const_flag or item.attr %} must NOT be treated as constant."""
+        _m(stock, cyth,
+           "{% for item in items %}"
+           "{% if fallback or item.val %}Y{% else %}N{% endif %}"
+           "{% endfor %}",
+           {"items": [{"val": True}, {"val": False}, {"val": True}],
+            "fallback": False})
+
+    def test_not_with_loop_var(self, stock, cyth):
+        """{% if not item.attr %} must NOT be treated as constant."""
+        _m(stock, cyth,
+           "{% for item in items %}"
+           "{% if not item.hidden %}visible{% else %}hidden{% endif %} "
+           "{% endfor %}",
+           {"items": [{"hidden": False}, {"hidden": True}, {"hidden": False}]})
+
+    def test_deeply_nested_compound(self, stock, cyth):
+        """Compound condition with 3 terms where loop var is deeply nested."""
+        _m(stock, cyth,
+           "{% for item in items %}"
+           "{% if flag1 and flag2 or item.x %}Y{% else %}N{% endif %}"
+           "{% endfor %}",
+           {"items": [{"x": True}, {"x": False}],
+            "flag1": False, "flag2": False})
+
+    def test_truly_constant_compound_condition(self, stock, cyth):
+        """{% if flag1 and flag2 %} (no loop var) IS correctly treated as constant."""
+        _m(stock, cyth,
+           "{% for item in items %}"
+           "{% if show_all and verbose %}[{{ item.name }}]{% endif %}"
+           "{% endfor %}",
+           {"items": [{"name": "a"}, {"name": "b"}],
+            "show_all": True, "verbose": True})
+
+
+class TestResetCycle:
+    """Tests for {% resetcycle %} inside loops."""
+
+    def test_resetcycle_resets_cycle_counter(self, stock, cyth):
+        """{% resetcycle %} should restart the cycle from the beginning."""
+        _m(stock, cyth,
+           "{% for item in items %}"
+           "{% cycle 'a' 'b' 'c' as cls %}"
+           "{% if item.reset %}{% resetcycle cls %}{% endif %}"
+           "{{ cls }},"
+           "{% endfor %}",
+           {"items": [
+               {"reset": False},
+               {"reset": True},   # resets cycle
+               {"reset": False},  # should restart from 'a'
+               {"reset": False},
+           ]})
+
+    def test_cycle_without_resetcycle_uses_inline(self, stock, cyth):
+        """Cycle without resetcycle should still produce correct output."""
+        _m(stock, cyth,
+           "{% for item in items %}"
+           "{% cycle 'odd' 'even' as row %}"
+           "{{ row }}:{{ item }} "
+           "{% endfor %}",
+           {"items": ["a", "b", "c", "d"]})
+
+
+class TestRequestContext:
+    """Tests for RequestContext rendering (cclass/Python class boundary)."""
+
+    def test_request_context_rendering(self, stock, cyth):
+        """RequestContext should render templates identically via backend.render()."""
+        from django.test import RequestFactory
+
+        factory = RequestFactory()
+        request = factory.get("/")
+
+        stock_tpl = stock.from_string("Hello {{ name }}!")
+        cyth_tpl = cyth.from_string("Hello {{ name }}!")
+
+        # Backend .render() creates RequestContext internally when request is provided
+        stock_result = stock_tpl.render({"name": "World"}, request=request)
+        cyth_result = cyth_tpl.render({"name": "World"}, request=request)
+
+        assert cyth_result == stock_result
+
+    def test_request_context_with_variables(self, stock, cyth):
+        """RequestContext rendering with loops and filters."""
+        from django.test import RequestFactory
+
+        factory = RequestFactory()
+        request = factory.get("/")
+
+        tpl_str = "{% for item in items %}{{ item|upper }} {% endfor %}"
+        stock_result = stock.from_string(tpl_str).render(
+            {"items": ["hello", "world"]}, request=request)
+        cyth_result = cyth.from_string(tpl_str).render(
+            {"items": ["hello", "world"]}, request=request)
+
+        assert cyth_result == stock_result
+
+    def test_request_context_direct_construction(self):
+        """Our RequestContext (regular class inheriting from cclass) works."""
+        from django.test import RequestFactory
+        from django_templates_cythonized.context import RequestContext as CythRequestContext
+
+        factory = RequestFactory()
+        request = factory.get("/")
+
+        ctx = CythRequestContext(request, {"name": "World"})
+        assert ctx["name"] == "World"
+        assert ctx.autoescape is True
+        assert ctx.request is request
+
+
+class TestUseTZ:
+    """Tests for USE_TZ=True with timezone-aware datetime values."""
+
+    @override_settings(USE_TZ=True)
+    def test_aware_datetime_rendering(self, stock, cyth):
+        """Timezone-aware datetime should render identically with USE_TZ=True."""
+        import zoneinfo
+        tz = zoneinfo.ZoneInfo("UTC")
+        dt = datetime.datetime(2024, 6, 15, 14, 30, 0, tzinfo=tz)
+        _m(stock, cyth, "{{ dt }}", {"dt": dt})
+
+    @override_settings(USE_TZ=True)
+    def test_naive_datetime_rendering(self, stock, cyth):
+        """Naive datetime with USE_TZ=True should render identically."""
+        dt = datetime.datetime(2024, 6, 15, 14, 30, 0)
+        _m(stock, cyth, "{{ dt }}", {"dt": dt})
+
+    @override_settings(USE_TZ=True)
+    def test_date_rendering_with_use_tz(self, stock, cyth):
+        """Date (not datetime) should render identically with USE_TZ=True."""
+        d = datetime.date(2024, 6, 15)
+        _m(stock, cyth, "{{ d }}", {"d": d})
+
+
+class TestCsrfToken:
+    """Tests for {% csrf_token %} tag."""
+
+    def test_csrf_token_renders_input(self, stock, cyth):
+        """{% csrf_token %} should produce identical output."""
+        _m(stock, cyth, "{% csrf_token %}", {"csrf_token": "abc123"})
+
+    def test_csrf_token_missing(self, stock, cyth):
+        """{% csrf_token %} with no csrf_token in context should match stock."""
+        _m(stock, cyth, "{% csrf_token %}", {})
+
+
+class TestUrlTag:
+    """Tests for {% url %} tag (requires URL configuration)."""
+
+    @override_settings(ROOT_URLCONF="tests.urls")
+    def test_url_basic(self, stock, cyth):
+        """{% url 'home' %} should resolve identically."""
+        _m(stock, cyth, "{% url 'home' %}")
+
+    @override_settings(ROOT_URLCONF="tests.urls")
+    def test_url_with_args(self, stock, cyth):
+        """{% url 'detail' pk %} should resolve identically."""
+        _m(stock, cyth, "{% url 'detail' pk=42 %}")
+
+    @override_settings(ROOT_URLCONF="tests.urls")
+    def test_url_as_variable(self, stock, cyth):
+        """{% url 'home' as link %} should resolve identically."""
+        _m(stock, cyth, "{% url 'home' as link %}[{{ link }}]")
+
+
+class TestWithTag:
+    """Tests for {% with %} legacy and modern syntax."""
+
+    def test_with_keyword_syntax(self, stock, cyth):
+        """{% with x='hello' %} modern syntax."""
+        _m(stock, cyth,
+           "{% with greeting='hello' %}{{ greeting }}{% endwith %}")
+
+    def test_with_legacy_syntax(self, stock, cyth):
+        """{% with user.name as fullname %} legacy syntax."""
+        _m(stock, cyth,
+           "{% with user.name as fullname %}{{ fullname }}{% endwith %}",
+           {"user": {"name": "Alice"}})
+
+
+class TestFormatHtml:
+    """Tests for format_html utility function."""
+
+    def test_format_html_empty_args_raises(self):
+        """format_html() without args or kwargs should raise TypeError."""
+        from django_templates_cythonized.html import format_html
+        with pytest.raises(TypeError, match="args or kwargs must be provided"):
+            format_html("hello")
+
+    def test_format_html_with_args(self):
+        """format_html() with positional args should escape them."""
+        from django_templates_cythonized.html import format_html
+        result = format_html("<b>{}</b>", "<script>")
+        assert "&lt;script&gt;" in result
+
+    def test_format_html_with_kwargs(self):
+        """format_html() with keyword args should escape them."""
+        from django_templates_cythonized.html import format_html
+        result = format_html("<b>{name}</b>", name="<script>")
+        assert "&lt;script&gt;" in result
+
+
+class TestForLoopEdgeCases:
+    """Edge cases for ForNode optimization paths."""
+
+    def test_loop_empty_list(self, stock, cyth):
+        """Empty list renders empty nodelist."""
+        _m(stock, cyth,
+           "{% for x in items %}{{ x }}{% empty %}EMPTY{% endfor %}",
+           {"items": []})
+
+    def test_loop_reversed(self, stock, cyth):
+        """{% for x in items reversed %} iterates in reverse."""
+        _m(stock, cyth,
+           "{% for x in items reversed %}{{ x }},{% endfor %}",
+           {"items": [1, 2, 3]})
+
+    def test_loop_nested_parentloop(self, stock, cyth):
+        """Nested loops expose parentloop correctly."""
+        _m(stock, cyth,
+           "{% for row in rows %}{% for col in cols %}"
+           "{{ forloop.parentloop.counter }}:{{ forloop.counter }},"
+           "{% endfor %}{% endfor %}",
+           {"rows": ["a", "b"], "cols": [1, 2]})
+
+    def test_loop_unpack_multiple_vars(self, stock, cyth):
+        """{% for k, v in items %} unpacks correctly."""
+        _m(stock, cyth,
+           "{% for k, v in items %}{{ k }}={{ v }},{% endfor %}",
+           {"items": [("a", 1), ("b", 2)]})
+
+    def test_loopattr_object_not_dict(self, stock, cyth):
+        """LOOPATTR resolves object attributes (not just dict keys)."""
+        items = [SimpleObj(name="Alice"), SimpleObj(name="Bob")]
+        _m(stock, cyth,
+           "{% for item in items %}{{ item.name }},{% endfor %}",
+           {"items": items})
+
+    def test_loopattr_callable_fallback(self, stock, cyth):
+        """LOOPATTR falls back correctly when attr is a callable method."""
+        items = [CallableObj("hello"), CallableObj("world")]
+        _m(stock, cyth,
+           "{% for item in items %}{{ item.get_value }},{% endfor %}",
+           {"items": items})
+
+    def test_loopattr_missing_attr(self, stock, cyth):
+        """LOOPATTR handles missing attributes gracefully."""
+        items = [{"name": "Alice"}, {"age": 30}]
+        _m(stock, cyth,
+           "{% for item in items %}{{ item.name }},{% endfor %}",
+           {"items": items})
+
+    def test_loopattr_none_value(self, stock, cyth):
+        """LOOPATTR handles None attribute values."""
+        items = [{"name": None}, {"name": "Bob"}]
+        _m(stock, cyth,
+           "{% for item in items %}{{ item.name }},{% endfor %}",
+           {"items": items})
+
+    def test_loopattr_html_escape(self, stock, cyth):
+        """LOOPATTR escapes HTML in string values."""
+        items = [{"name": "<b>Alice</b>"}, {"name": "Bob"}]
+        _m(stock, cyth,
+           "{% for item in items %}{{ item.name }},{% endfor %}",
+           {"items": items})
+
+    def test_loopattr_safestring(self, stock, cyth):
+        """LOOPATTR preserves SafeString values."""
+        items = [{"name": mark_safe("<b>Alice</b>")}, {"name": "Bob"}]
+        _m(stock, cyth,
+           "{% for item in items %}{{ item.name }},{% endfor %}",
+           {"items": items})
+
+    def test_loopattr_float_value(self, stock, cyth):
+        """LOOPATTR handles float values correctly."""
+        items = [{"price": 19.99}, {"price": 0.5}]
+        _m(stock, cyth,
+           "{% for item in items %}{{ item.price }},{% endfor %}",
+           {"items": items})
+
+    def test_loopattr_bool_value(self, stock, cyth):
+        """LOOPATTR handles bool values (bool is subclass of int)."""
+        items = [{"active": True}, {"active": False}]
+        _m(stock, cyth,
+           "{% for item in items %}{{ item.active }},{% endfor %}",
+           {"items": items})
+
+    def test_loopattr_with_filter(self, stock, cyth):
+        """LOOPATTR_FILTER path handles filter application."""
+        items = [{"name": "alice"}, {"name": "bob"}]
+        _m(stock, cyth,
+           "{% for item in items %}{{ item.name|upper }},{% endfor %}",
+           {"items": items})
+
+    def test_loopattr_filter_callable_fallback(self, stock, cyth):
+        """LOOPATTR_FILTER falls back when attr is callable."""
+        items = [CallableObj("hello"), CallableObj("world")]
+        _m(stock, cyth,
+           "{% for item in items %}{{ item.get_value|upper }},{% endfor %}",
+           {"items": items})
+
+
+class TestLoopIfEdgeCases:
+    """Edge cases for LOOPIF and LOOPIF_CONST optimization paths."""
+
+    def test_loopif_not_operator(self, stock, cyth):
+        """{% if not book.attr %} with not prefix operator."""
+        books = [{"title": "A", "out_of_stock": True},
+                 {"title": "B", "out_of_stock": False},
+                 {"title": "C", "out_of_stock": None}]
+        _m(stock, cyth,
+           "{% for book in books %}"
+           "{% if not book.out_of_stock %}{{ book.title }},{% endif %}"
+           "{% endfor %}",
+           {"books": books})
+
+    def test_loopif_boolean_truthiness(self, stock, cyth):
+        """LOOPIF simple boolean truthiness test."""
+        books = [{"title": "A", "active": True},
+                 {"title": "B", "active": False},
+                 {"title": "C", "active": ""}]
+        _m(stock, cyth,
+           "{% for book in books %}"
+           "{% if book.active %}{{ book.title }},{% endif %}"
+           "{% endfor %}",
+           {"books": books})
+
+    def test_loopif_none_comparison(self, stock, cyth):
+        """LOOPIF comparing attribute against None."""
+        items = [{"val": None}, {"val": 0}, {"val": ""}]
+        _m(stock, cyth,
+           "{% for item in items %}"
+           "{% if item.val == None %}null,{% else %}val,{% endif %}"
+           "{% endfor %}",
+           {"items": items})
+
+    def test_loopif_missing_attr(self, stock, cyth):
+        """LOOPIF handles missing attributes (should not crash)."""
+        items = [{"status": "active"}, {"name": "Bob"}]
+        _m(stock, cyth,
+           "{% for item in items %}"
+           "{% if item.status == 'active' %}yes,{% else %}no,{% endif %}"
+           "{% endfor %}",
+           {"items": items})
+
+    def test_loopif_incompatible_types(self, stock, cyth):
+        """LOOPIF handles comparison between incompatible types."""
+        items = [{"val": "abc"}, {"val": 42}]
+        _m(stock, cyth,
+           "{% for item in items %}"
+           "{% if item.val > 10 %}big,{% else %}small,{% endif %}"
+           "{% endfor %}",
+           {"items": items})
+
+    def test_loopif_const_not_prefix(self, stock, cyth):
+        """LOOPIF_CONST with not prefix operator on constant."""
+        _m(stock, cyth,
+           "{% for x in items %}"
+           "{% if not show_all %}{{ x }},{% endif %}"
+           "{% endfor %}",
+           {"items": [1, 2, 3], "show_all": False})
+
+    def test_loopif_const_and_operator(self, stock, cyth):
+        """LOOPIF_CONST falls back correctly for compound and/or."""
+        _m(stock, cyth,
+           "{% for x in items %}"
+           "{% if flag_a and flag_b %}{{ x }},{% endif %}"
+           "{% endfor %}",
+           {"items": [1, 2, 3], "flag_a": True, "flag_b": True})
+
+    def test_loopif_const_loop_var_in_compound(self, stock, cyth):
+        """Compound condition with loop var should NOT be classified as const."""
+        items = [{"val": 1}, {"val": 2}, {"val": 3}]
+        _m(stock, cyth,
+           "{% for item in items %}"
+           "{% if item.val > 1 and flag %}{{ item.val }},{% endif %}"
+           "{% endfor %}",
+           {"items": items, "flag": True})
+
+    def test_loopif_multiple_elif(self, stock, cyth):
+        """LOOPIF with multiple elif branches."""
+        items = [{"status": "active"}, {"status": "pending"},
+                 {"status": "inactive"}, {"status": "unknown"}]
+        _m(stock, cyth,
+           "{% for item in items %}"
+           "{% if item.status == 'active' %}A,"
+           "{% elif item.status == 'pending' %}P,"
+           "{% elif item.status == 'inactive' %}I,"
+           "{% else %}?,"
+           "{% endif %}"
+           "{% endfor %}",
+           {"items": items})
+
+    def test_loopif_different_attrs_per_branch(self, stock, cyth):
+        """LOOPIF with different attributes in each condition branch."""
+        items = [{"price": 100, "qty": 5},
+                 {"price": 50, "qty": 0},
+                 {"price": 200, "qty": 10}]
+        _m(stock, cyth,
+           "{% for item in items %}"
+           "{% if item.price > 99 %}expensive,"
+           "{% elif item.qty == 0 %}oos,"
+           "{% else %}ok,"
+           "{% endif %}"
+           "{% endfor %}",
+           {"items": items})
+
+
+class TestForloopCounterEdgeCases:
+    """Edge cases for FORLOOP_COUNTER inline optimization."""
+
+    def test_forloop_counter(self, stock, cyth):
+        """{{ forloop.counter }} starts at 1."""
+        _m(stock, cyth,
+           "{% for x in items %}{{ forloop.counter }},{% endfor %}",
+           {"items": "abc"})
+
+    def test_forloop_counter0(self, stock, cyth):
+        """{{ forloop.counter0 }} starts at 0."""
+        _m(stock, cyth,
+           "{% for x in items %}{{ forloop.counter0 }},{% endfor %}",
+           {"items": "abc"})
+
+    def test_forloop_revcounter(self, stock, cyth):
+        """{{ forloop.revcounter }} counts down to 1."""
+        _m(stock, cyth,
+           "{% for x in items %}{{ forloop.revcounter }},{% endfor %}",
+           {"items": "abc"})
+
+    def test_forloop_revcounter0(self, stock, cyth):
+        """{{ forloop.revcounter0 }} counts down to 0."""
+        _m(stock, cyth,
+           "{% for x in items %}{{ forloop.revcounter0 }},{% endfor %}",
+           {"items": "abc"})
+
+    def test_forloop_first_last(self, stock, cyth):
+        """{{ forloop.first }} and {{ forloop.last }} work correctly."""
+        _m(stock, cyth,
+           "{% for x in items %}"
+           "{% if forloop.first %}[{% endif %}"
+           "{{ x }}"
+           "{% if forloop.last %}]{% endif %}"
+           "{% if not forloop.last %},{% endif %}"
+           "{% endfor %}",
+           {"items": [1, 2, 3]})
+
+    def test_forloop_single_item(self, stock, cyth):
+        """Single-item loop: first and last both True."""
+        _m(stock, cyth,
+           "{% for x in items %}"
+           "{{ forloop.counter }},{{ forloop.first }},{{ forloop.last }}"
+           "{% endfor %}",
+           {"items": [42]})
+
+
+class TestLoopCycleEdgeCases:
+    """Edge cases for LOOPCYCLE inline optimization."""
+
+    def test_cycle_basic(self, stock, cyth):
+        """Basic cycle in a loop."""
+        _m(stock, cyth,
+           "{% for x in items %}{% cycle 'a' 'b' 'c' %},{% endfor %}",
+           {"items": [1, 2, 3, 4, 5]})
+
+    def test_cycle_as_variable(self, stock, cyth):
+        """{% cycle ... as var %} sets variable in context."""
+        _m(stock, cyth,
+           "{% for x in items %}"
+           "{% cycle 'odd' 'even' as rowclass %}"
+           "{{ rowclass }}-{{ x }},"
+           "{% endfor %}",
+           {"items": [1, 2, 3, 4]})
+
+    def test_cycle_with_resetcycle(self, stock, cyth):
+        """Cycle with resetcycle resets the cycle counter."""
+        _m(stock, cyth,
+           "{% for x in items %}"
+           "{% cycle 'a' 'b' 'c' as letter %}"
+           "{% if forloop.counter == 3 %}{% resetcycle letter %}{% endif %}"
+           "{{ letter }},"
+           "{% endfor %}",
+           {"items": [1, 2, 3, 4, 5, 6]})
+
+    def test_cycle_silent(self, stock, cyth):
+        """{% cycle ... as var silent %} does not output."""
+        _m(stock, cyth,
+           "{% for x in items %}"
+           "{% cycle 'a' 'b' as cls silent %}"
+           "[{{ cls }}]"
+           "{% endfor %}",
+           {"items": [1, 2, 3]})
+
+
+class TestConstVarCacheEdgeCases:
+    """Edge cases for constant variable caching optimization."""
+
+    def test_const_var_cached(self, stock, cyth):
+        """Constant variable (not referencing loop var) renders correctly."""
+        _m(stock, cyth,
+           "{% for x in items %}{{ prefix }}-{{ x }},{% endfor %}",
+           {"items": [1, 2, 3], "prefix": "item"})
+
+    def test_const_var_with_cycle_variable(self, stock, cyth):
+        """Constant var is NOT cached when cycle writes to same name."""
+        _m(stock, cyth,
+           "{% for x in items %}"
+           "{% cycle 'a' 'b' as rowclass %}"
+           "{{ rowclass }}-{{ x }},"
+           "{% endfor %}",
+           {"items": [1, 2, 3, 4]})
+
+    def test_const_var_deep_lookup(self, stock, cyth):
+        """Constant var with multi-segment lookup (e.g. settings.name)."""
+        _m(stock, cyth,
+           "{% for x in items %}{{ config.prefix }}-{{ x }},{% endfor %}",
+           {"items": [1, 2, 3], "config": {"prefix": "v"}})
+
+    def test_const_var_with_custom_tag_present(self, stock, cyth):
+        """Constant var caching disabled when non-standard nodes present."""
+        _m(stock, cyth,
+           "{% load custom_tags %}"
+           "{% for x in items %}"
+           "{% greeting 'World' %}"
+           "{{ currency }}-{{ x }},"
+           "{% endfor %}",
+           {"items": [1, 2, 3], "currency": "USD"})

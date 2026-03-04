@@ -505,6 +505,11 @@ class ForNode(Node):
                                                 if _s_lk[0] == loopvar0 or _s_lk[0] == 'forloop':
                                                     _is_const = False
                                                     break
+                                    elif _side_c is not None and not isinstance(_side_c, TemplateLiteral):
+                                        # Nested Operator (compound and/or/not) —
+                                        # conservatively assume it may reference loop var.
+                                        _is_const = False
+                                        break
                                 if not _is_const:
                                     break
                             else:
@@ -660,11 +665,19 @@ class ForNode(Node):
             # Pre-classify CycleNode for LOOPCYCLE optimization (tag 7).
             # For cycle nodes with pre-resolved literals and `as varname`,
             # inline the modulo counter and context write.
+            # Skip LOOPCYCLE for CycleNodes that have a matching ResetCycleNode
+            # in the loop body, since the inline path uses `i % n` and ignores
+            # the render_context counter that resetcycle resets.
             if _ntags is not None:
+                # Scan the ENTIRE loop nodelist (including nested nodes)
+                # for ResetCycleNodes, since they may be inside IfNode etc.
+                _reset_cycle_targets: set = set()
+                for _rcn in self.nodelist_loop.get_nodes_by_type(ResetCycleNode):
+                    _reset_cycle_targets.add(id(_rcn.node))
                 for j in range(num_nodes):
                     if _ntags[j] == 4 and isinstance(loop_nodes[j], CycleNode):
                         _cyc_nd: CycleNode = loop_nodes[j]
-                        if _cyc_nd._preresolved is not None:
+                        if _cyc_nd._preresolved is not None and id(_cyc_nd) not in _reset_cycle_targets:
                             _ntags[j] = 7  # LOOPCYCLE
                             _nattrs[j] = _cyc_nd
 

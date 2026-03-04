@@ -58,6 +58,8 @@ def format_html(format_string, *args, **kwargs):
     and call mark_safe() on the result. This function should be used instead
     of str.format or % interpolation to build up small HTML fragments.
     """
+    if not (args or kwargs):
+        raise TypeError("args or kwargs must be provided.")
     args_safe = [conditional_escape(arg) for arg in args]
     kwargs_safe = {k: conditional_escape(v) for k, v in kwargs.items()}
     return SafeString(format_string.format(*args_safe, **kwargs_safe))
