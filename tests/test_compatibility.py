@@ -8,6 +8,7 @@ asserting byte-for-byte identical output.
 import datetime
 
 import pytest
+from django.test import override_settings
 from django.template import engines
 from django.utils.safestring import SafeString, mark_safe
 
@@ -1461,3 +1462,205 @@ class TestMixedEdgeCases:
            "{% if item.score >= 80 %}pass{% else %}fail{% endif %} "
            "{% endfor %}",
            {"items": [{"score": 90}, {"score": 50}, {"score": 80}]})
+
+
+# ---------------------------------------------------------------------------
+# Production edge case tests — correctness in LOOPATTR/LOOPIF hot paths
+# ---------------------------------------------------------------------------
+
+class TestLoopEdgeCases:
+    """Tests for edge cases in the optimized ForNode loop paths.
+
+    These test correctness of LOOPATTR, LOOPIF, LOOPIF_CONST, LOOPCYCLE,
+    FORLOOP_COUNTER, and constant variable caching optimizations.
+    """
+
+    def test_dict_missing_key_in_loop(self, stock, cyth):
+        """Dict in loop missing an accessed key should silently resolve to empty."""
+        _m(stock, cyth,
+           "{% for item in items %}[{{ item.name }}:{{ item.price }}]{% endfor %}",
+           {"items": [
+               {"name": "a", "price": 10},
+               {"name": "b"},  # missing 'price'
+               {"price": 30},  # missing 'name'
+           ]})
+
+    def test_dict_missing_key_in_loop_with_filter(self, stock, cyth):
+        """Dict missing key when filter applied — LOOPATTR_FILTER path."""
+        _m(stock, cyth,
+           "{% for item in items %}[{{ item.name|upper }}]{% endfor %}",
+           {"items": [
+               {"name": "hello"},
+               {},  # missing 'name'
+               {"name": "world"},
+           ]})
+
+    def test_loop_if_dict_missing_key(self, stock, cyth):
+        """LOOPIF with dict missing the condition key."""
+        _m(stock, cyth,
+           "{% for item in items %}"
+           "{% if item.active %}Y{% else %}N{% endif %}"
+           "{% endfor %}",
+           {"items": [
+               {"active": True},
+               {},  # missing 'active'
+               {"active": False},
+           ]})
+
+    def test_loop_if_comparison_dict_missing_key(self, stock, cyth):
+        """LOOPIF comparison with dict missing the condition key."""
+        _m(stock, cyth,
+           "{% for item in items %}"
+           "{% if item.score == 100 %}perfect{% elif item.score >= 50 %}pass{% else %}fail{% endif %} "
+           "{% endfor %}",
+           {"items": [
+               {"score": 100},
+               {},  # missing 'score'
+               {"score": 50},
+           ]})
+
+    def test_loop_if_incompatible_comparison(self, stock, cyth):
+        """LOOPIF with incompatible comparison types should not crash."""
+        _m(stock, cyth,
+           "{% for item in items %}"
+           "{% if item.val > 10 %}big{% else %}small{% endif %} "
+           "{% endfor %}",
+           {"items": [
+               {"val": 20},
+               {"val": "not a number"},  # str > int raises TypeError
+               {"val": 5},
+           ]})
+
+    def test_loop_objects_missing_attribute(self, stock, cyth):
+        """Object in loop missing an accessed attribute — LOOPATTR path."""
+        class Book:
+            def __init__(self, **kwargs):
+                for k, v in kwargs.items():
+                    setattr(self, k, v)
+        _m(stock, cyth,
+           "{% for book in books %}[{{ book.title }}:{{ book.price }}]{% endfor %}",
+           {"items": [
+               Book(title="A", price=10),
+               Book(title="B"),  # missing 'price'
+           ]})
+
+    def test_constant_var_not_cached_with_custom_tag(self, stock, cyth):
+        """Constant vars should NOT be cached when custom tags exist in loop body.
+
+        {% load %} + {% custom_tag %} in loop body could modify context,
+        so constant var caching must be disabled.
+        """
+        # This test uses {% with %} which is a safe tag, but it changes context.
+        # The key insight is that {{ greeting }} is NOT the loop var, and
+        # its value changes per iteration via the inner {% with %}.
+        _m(stock, cyth,
+           "{% for item in items %}"
+           "{% with greeting=item.msg %}"
+           "{{ greeting }} "
+           "{% endwith %}"
+           "{% endfor %}",
+           {"items": [
+               {"msg": "hello"},
+               {"msg": "world"},
+               {"msg": "foo"},
+           ]})
+
+    def test_forloop_counter_in_optimized_loop(self, stock, cyth):
+        """forloop.counter/counter0/revcounter/revcounter0 in loop."""
+        _m(stock, cyth,
+           "{% for item in items %}"
+           "{{ forloop.counter }}.{{ forloop.counter0 }}"
+           ".{{ forloop.revcounter }}.{{ forloop.revcounter0 }} "
+           "{% endfor %}",
+           {"items": ["a", "b", "c"]})
+
+    def test_loop_cycle_with_if(self, stock, cyth):
+        """cycle + if in same loop body — tests LOOPCYCLE + LOOPIF interaction."""
+        _m(stock, cyth,
+           "{% for item in items %}"
+           "{% cycle 'odd' 'even' as cls %}"
+           "{% if item.active %}{{ cls }}:{{ item.name }}{% endif %} "
+           "{% endfor %}",
+           {"items": [
+               {"name": "a", "active": True},
+               {"name": "b", "active": False},
+               {"name": "c", "active": True},
+               {"name": "d", "active": True},
+           ]})
+
+    def test_mixed_dict_and_object_loop(self, stock, cyth):
+        """Loop over mix of dicts and objects — tests type dispatch per item."""
+        class Obj:
+            def __init__(self, name):
+                self.name = name
+        _m(stock, cyth,
+           "{% for item in items %}{{ item.name }} {% endfor %}",
+           {"items": [
+               {"name": "dict1"},
+               Obj("obj1"),
+               {"name": "dict2"},
+           ]})
+
+    def test_empty_loop_with_empty_tag(self, stock, cyth):
+        """{% empty %} rendered when sequence is empty."""
+        _m(stock, cyth,
+           "{% for item in items %}{{ item }}{% empty %}EMPTY{% endfor %}",
+           {"items": []})
+
+    def test_loop_none_sequence(self, stock, cyth):
+        """Iterating over None should use {% empty %} or produce nothing."""
+        _m(stock, cyth,
+           "{% for item in items %}{{ item }}{% empty %}NONE{% endfor %}",
+           {"items": None})
+
+    def test_nested_loop_with_optimized_inner(self, stock, cyth):
+        """Nested for loops — inner loop should be independently optimized."""
+        _m(stock, cyth,
+           "{% for row in rows %}"
+           "[{% for cell in row.cells %}{{ cell.val }}{% endfor %}]"
+           "{% endfor %}",
+           {"rows": [
+               {"cells": [{"val": 1}, {"val": 2}]},
+               {"cells": [{"val": 3}]},
+           ]})
+
+    def test_loop_tuple_unpacking(self, stock, cyth):
+        """Tuple unpacking in for loop."""
+        _m(stock, cyth,
+           "{% for k, v in items %}{{ k }}={{ v }} {% endfor %}",
+           {"items": [("a", 1), ("b", 2), ("c", 3)]})
+
+    def test_loop_reversed(self, stock, cyth):
+        """Reversed loop iteration."""
+        _m(stock, cyth,
+           "{% for item in items reversed %}{{ item.name }} {% endfor %}",
+           {"items": [{"name": "a"}, {"name": "b"}, {"name": "c"}]})
+
+
+class TestUseThousandSeparator:
+    """Test that USE_THOUSAND_SEPARATOR is respected for integer rendering."""
+
+    @override_settings(USE_THOUSAND_SEPARATOR=True, USE_L10N=True)
+    def test_int_with_thousand_separator_simple(self, stock, cyth):
+        """Integer values should be formatted with thousand separators."""
+        # Need to reset the cached _use_thousand_sep in formats module.
+        import django_templates_cythonized.formats as fmt
+        old_val = fmt._use_thousand_sep
+        fmt._use_thousand_sep = None
+        try:
+            _m(stock, cyth, "{{ val }}", {"val": 1000000})
+        finally:
+            fmt._use_thousand_sep = old_val
+
+    @override_settings(USE_THOUSAND_SEPARATOR=True, USE_L10N=True)
+    def test_int_with_thousand_separator_in_loop(self, stock, cyth):
+        """Integer in LOOPATTR path should respect USE_THOUSAND_SEPARATOR."""
+        import django_templates_cythonized.formats as fmt
+        old_val = fmt._use_thousand_sep
+        fmt._use_thousand_sep = None
+        try:
+            _m(stock, cyth,
+               "{% for item in items %}{{ item.price }} {% endfor %}",
+               {"items": [{"price": 1234567}, {"price": 42}, {"price": 100000}]})
+        finally:
+            fmt._use_thousand_sep = old_val

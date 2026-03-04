@@ -1590,10 +1590,16 @@ def _render_var_fast(fe: FilterExpression, context: Context):
             return _fast_escape(value)
         return value
 
-    # Int fast path: digits never need HTML escaping or localize (when no
-    # thousand separator). Matches the fast path in _render_var_with_value.
+    # Int fast path: localized int strings never contain HTML special chars,
+    # so skip the _fast_escape call. Uses localize() to respect
+    # USE_THOUSAND_SEPARATOR.
     if isinstance(value, int) and not isinstance(value, bool):
-        return str(value)
+        lang = context._lang
+        if lang is None:
+            from django.utils.translation import get_language
+            lang = get_language()
+            context._lang = lang
+        return localize(value, use_l10n=context.use_l10n, lang=lang)
 
     # Float fast path: str(float) produces digits, '.', '-', 'e', '+'
     # None of which are HTML special chars, so skip the _fast_escape call.
@@ -1693,9 +1699,14 @@ def _render_var_with_value(fe: FilterExpression, value, context: Context):
             return _fast_escape(value)
         return value
 
-    # Inline the int fast path: int → str(value) (no escaping needed for digits).
+    # Int fast path: localized int strings never contain HTML special chars.
     if isinstance(value, int) and not isinstance(value, bool):
-        return str(value)
+        lang = context._lang
+        if lang is None:
+            from django.utils.translation import get_language
+            lang = get_language()
+            context._lang = lang
+        return localize(value, use_l10n=context.use_l10n, lang=lang)
 
     # Float fast path: str(float) produces digits, '.', '-', 'e', '+'
     # None of which are HTML special chars.

@@ -409,12 +409,17 @@ class ForNode(Node):
                 # Collect variable names written by loop body nodes (e.g. cycle's "as rowclass").
                 # These must NOT be cached as constants.
                 _loop_written_vars: set = set()
+                _can_cache_consts: cython.bint = True
                 for j in range(num_nodes):
                     _nd_w = loop_nodes[j]
                     if isinstance(_nd_w, CycleNode):
                         _cw: CycleNode = _nd_w
                         if _cw.variable_name:
                             _loop_written_vars.add(_cw.variable_name)
+                    elif not isinstance(_nd_w, (TextNode, VariableNode, IfNode)):
+                        # Non-standard nodes (custom tags etc.) may modify
+                        # context variables — disable constant var caching.
+                        _can_cache_consts = False
                 for j in range(num_nodes):
                     _nd = loop_nodes[j]
                     if isinstance(_nd, TextNode):
@@ -456,9 +461,11 @@ class ForNode(Node):
                                         elif _fl_attr == 'revcounter0':
                                             _ntags[j] = 8
                                             _nattrs[j] = -2  # signal for revcounter0
-                                    elif _lkc[0] != 'forloop' and _lkc[0] not in _loop_written_vars:
+                                    elif _can_cache_consts and _lkc[0] != 'forloop' and _lkc[0] not in _loop_written_vars:
                                         # Non-loop variable (e.g. {{ currency }}) —
                                         # render once and cache as text.
+                                        # Only safe when no OTHER nodes exist that
+                                        # could modify context variables.
                                         _ntags[j] = 0
                                         _ntext[j] = _vnd.render(context)
                     elif isinstance(_nd, IfNode):
@@ -702,8 +709,12 @@ class ForNode(Node):
                             nodelist[idx] = _const_nl_r.render(context)
                         elif _tag == 2:  # LOOPATTR_NOFILTER
                             if _item_is_dict:
-                                # Dict items: direct subscript, no try/except
-                                _av = item[_nattrs[j]]
+                                try:
+                                    _av = item[_nattrs[j]]
+                                except KeyError:
+                                    nodelist[idx] = loop_nodes[j].render(context)
+                                    idx += 1
+                                    continue
                             else:
                                 try:
                                     _av = item[_nattrs[j]]
@@ -723,7 +734,14 @@ class ForNode(Node):
                                 else:
                                     nodelist[idx] = _av
                             elif isinstance(_av, int) and not isinstance(_av, bool):
-                                nodelist[idx] = str(_av)
+                                _lang = context._lang
+                                if _lang is None:
+                                    from django.utils.translation import get_language
+                                    _lang = get_language()
+                                    context._lang = _lang
+                                nodelist[idx] = localize(
+                                    _av, use_l10n=context.use_l10n, lang=_lang
+                                )
                             elif isinstance(_av, float):
                                 _lang = context._lang
                                 if _lang is None:
@@ -742,7 +760,12 @@ class ForNode(Node):
                                 nodelist[idx] = render_value_in_context(_av, context)
                         elif _tag == 3:  # LOOPATTR_FILTER
                             if _item_is_dict:
-                                _av = item[_nattrs[j]]
+                                try:
+                                    _av = item[_nattrs[j]]
+                                except KeyError:
+                                    nodelist[idx] = loop_nodes[j].render(context)
+                                    idx += 1
+                                    continue
                             else:
                                 try:
                                     _av = item[_nattrs[j]]
@@ -775,7 +798,10 @@ class ForNode(Node):
                             # If all conditions reference same attr, resolve once
                             if _if_same_attr is not None:
                                 if _item_is_dict:
-                                    _if_val = item[_if_same_attr]
+                                    try:
+                                        _if_val = item[_if_same_attr]
+                                    except KeyError:
+                                        _if_val = None
                                 else:
                                     try:
                                         _if_val = item[_if_same_attr]
@@ -797,17 +823,11 @@ class ForNode(Node):
                                             nodelist[idx] = _if_br_nl.render(context)
                                         _if_matched = True
                                         break
-                                    if _if_op == -1:
-                                        if _if_val:
-                                            if _if_br_text is not None:
-                                                nodelist[idx] = _if_br_text
-                                            else:
-                                                nodelist[idx] = _if_br_nl.render(context)
-                                            _if_matched = True
-                                            break
-                                    else:
-                                        _cmp_ok: cython.bint = False
-                                        if _if_op == OP_EQ:
+                                    _cmp_ok: cython.bint = False
+                                    try:
+                                        if _if_op == -1:
+                                            _cmp_ok = _if_val
+                                        elif _if_op == OP_EQ:
                                             _cmp_ok = _if_val == _if_rhs
                                         elif _if_op == OP_NE:
                                             _cmp_ok = _if_val != _if_rhs
@@ -819,13 +839,15 @@ class ForNode(Node):
                                             _cmp_ok = _if_val < _if_rhs
                                         elif _if_op == OP_LE:
                                             _cmp_ok = _if_val <= _if_rhs
-                                        if _cmp_ok:
-                                            if _if_br_text is not None:
-                                                nodelist[idx] = _if_br_text
-                                            else:
-                                                nodelist[idx] = _if_br_nl.render(context)
-                                            _if_matched = True
-                                            break
+                                    except Exception:
+                                        _cmp_ok = False
+                                    if _cmp_ok:
+                                        if _if_br_text is not None:
+                                            nodelist[idx] = _if_br_text
+                                        else:
+                                            nodelist[idx] = _if_br_nl.render(context)
+                                        _if_matched = True
+                                        break
                             else:
                                 # Different attrs per condition — resolve each
                                 for _if_entry in _if_info:
@@ -842,7 +864,10 @@ class ForNode(Node):
                                         _if_matched = True
                                         break
                                     if _item_is_dict:
-                                        _if_val = item[_if_attr]
+                                        try:
+                                            _if_val = item[_if_attr]
+                                        except KeyError:
+                                            _if_val = None
                                     else:
                                         try:
                                             _if_val = item[_if_attr]
@@ -851,17 +876,11 @@ class ForNode(Node):
                                                 _if_val = getattr(item, _if_attr)
                                             except (TypeError, AttributeError):
                                                 _if_val = None
-                                    if _if_op == -1:
-                                        if _if_val:
-                                            if _if_br_text is not None:
-                                                nodelist[idx] = _if_br_text
-                                            else:
-                                                nodelist[idx] = _if_br_nl.render(context)
-                                            _if_matched = True
-                                            break
-                                    else:
-                                        _cmp_ok = False
-                                        if _if_op == OP_EQ:
+                                    _cmp_ok = False
+                                    try:
+                                        if _if_op == -1:
+                                            _cmp_ok = _if_val
+                                        elif _if_op == OP_EQ:
                                             _cmp_ok = _if_val == _if_rhs
                                         elif _if_op == OP_NE:
                                             _cmp_ok = _if_val != _if_rhs
@@ -873,13 +892,15 @@ class ForNode(Node):
                                             _cmp_ok = _if_val < _if_rhs
                                         elif _if_op == OP_LE:
                                             _cmp_ok = _if_val <= _if_rhs
-                                        if _cmp_ok:
-                                            if _if_br_text is not None:
-                                                nodelist[idx] = _if_br_text
-                                            else:
-                                                nodelist[idx] = _if_br_nl.render(context)
-                                            _if_matched = True
-                                            break
+                                    except Exception:
+                                        _cmp_ok = False
+                                    if _cmp_ok:
+                                        if _if_br_text is not None:
+                                            nodelist[idx] = _if_br_text
+                                        else:
+                                            nodelist[idx] = _if_br_nl.render(context)
+                                        _if_matched = True
+                                        break
                             if not _if_matched:
                                 nodelist[idx] = ""
                         elif _tag == 7:  # LOOPCYCLE
