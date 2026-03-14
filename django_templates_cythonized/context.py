@@ -221,6 +221,11 @@ class Context(BaseContext):
         duplicate.render_context = copy(self.render_context)
         duplicate.template = self.template
         duplicate._lang = self._lang
+        # Preserve __dict__ from Python subclasses (e.g. RequestContext stores
+        # request, _processors, _processors_index in __dict__).
+        src_dict = getattr(self, "__dict__", None)
+        if src_dict:
+            duplicate.__dict__.update(src_dict)
         return duplicate
 
     def update(self, other_dict):

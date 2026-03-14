@@ -91,6 +91,8 @@ class CythonizedFormRenderer(EngineMixin, BaseRenderer):
             ctx = Context(autoescape=True)
             _form_ctx_local.ctx = ctx
 
+        # Reset cached language so locale changes between requests are respected.
+        ctx._lang = None
         ctx.dicts.append(context)
         try:
             return tpl.render(ctx).strip()

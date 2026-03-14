@@ -8,6 +8,7 @@ scanning that skips html.escape() entirely when no special chars are present.
 import cython
 import html as _html
 
+from django.utils.functional import Promise
 from django.utils.safestring import SafeData, SafeString
 
 __all__ = ["conditional_escape", "escape", "format_html"]
@@ -45,6 +46,10 @@ def conditional_escape(text):
     the string contains no HTML-special characters (the common case for
     template variables like names, numbers, etc.).
     """
+    # Resolve lazy strings (e.g. lazy(mark_safe, str)) before checking SafeData,
+    # so that lazy-wrapped SafeString values are preserved correctly.
+    if isinstance(text, Promise):
+        text = str(text)
     if isinstance(text, SafeData):
         return text
     if hasattr(text, "__html__"):

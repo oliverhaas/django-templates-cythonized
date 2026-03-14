@@ -150,12 +150,18 @@ def _flatten_includes(nodelist, engine, seen):
     - Not isolated_context
     - Not a relative path (./  or ../)
     - No cycle (template not already being flattened)
+    - Not already spliced into this nodelist (duplicate includes of the same
+      template are kept as IncludeNodes so each gets its own render_context
+      scope, preventing stateful nodes like CycleNode from sharing state)
     """
     from .loader_tags import IncludeNode
 
     nodes: list = nodelist._nodes
     i: cython.Py_ssize_t = 0
     changed: cython.bint = False
+    # Track templates already spliced into THIS nodelist to prevent sharing
+    # stateful node objects (CycleNode, InclusionTag) across duplicate includes.
+    flattened_here: set = set()
     while i < len(nodes):
         node = nodes[i]
         if isinstance(node, IncludeNode):
@@ -170,7 +176,11 @@ def _flatten_includes(nodelist, engine, seen):
                 and not fe.filters
             ):
                 tpl_name = fe.var
-                if not tpl_name.startswith(("./", "../")) and tpl_name not in seen:
+                if (
+                    not tpl_name.startswith(("./", "../"))
+                    and tpl_name not in seen
+                    and tpl_name not in flattened_here
+                ):
                     try:
                         included_tpl = engine.get_template(tpl_name)
                         # Unwrap backend _Template wrapper if needed
@@ -179,9 +189,10 @@ def _flatten_includes(nodelist, engine, seen):
                         included_nodes: list = included_tpl.nodelist._nodes
                         # Splice included nodes in place of the IncludeNode
                         seen.add(tpl_name)
+                        flattened_here.add(tpl_name)
                         # Recursively flatten the included template's nodes first
                         _flatten_includes(included_tpl.nodelist, engine, seen)
-                        # Now splice copies of included nodes into parent
+                        # Splice included nodes into parent
                         n_included = len(included_nodes)
                         nodes[i:i+1] = included_nodes
                         seen.discard(tpl_name)
@@ -1550,13 +1561,27 @@ def _resolve_fe_raw(fe: FilterExpression, context: Context):
 def _fast_escape(value):
     """
     Fast HTML escape: scan string for special chars at C level.
-    If none found, return the original string (no allocation).
-    Only calls html.escape() when actually needed.
+    Returns SafeString (matching Django's conditional_escape contract) so
+    that callers storing the result back into context (e.g. firstof asvar,
+    cycle as name) won't get double-escaped on re-render.
     """
     c: cython.Py_UCS4
     for c in value:
         if c == 60 or c == 62 or c == 38 or c == 34 or c == 39:
             # <, >, &, ", ' — needs escaping, delegate to html.escape
+            return SafeString(_stdlib_html.escape(value))
+    return SafeString(value)
+
+
+def _fast_escape_raw(value):
+    """
+    Fast HTML escape returning plain str (no SafeString wrapping).
+    Use only in hot paths where the result goes directly into a join-list
+    that is subsequently wrapped in SafeString (e.g. ForNode.render nodelist).
+    """
+    c: cython.Py_UCS4
+    for c in value:
+        if c == 60 or c == 62 or c == 38 or c == 34 or c == 39:
             return _stdlib_html.escape(value)
     return value
 
@@ -1662,7 +1687,7 @@ def _render_var_fast(fe: FilterExpression, context: Context):
             if context.autoescape:
                 if is_safe and was_safe:
                     return value
-                return _fast_escape(value)
+                return _fast_escape_raw(value)
             return value
         else:
             f_args: list = fi.args
@@ -1675,7 +1700,7 @@ def _render_var_fast(fe: FilterExpression, context: Context):
                 if context.autoescape:
                     if isinstance(value, SafeData):
                         return value
-                    return _fast_escape(value)
+                    return _fast_escape_raw(value)
                 return value
             # Non-str filter result: fall through to type-specific paths below
 
@@ -1684,7 +1709,7 @@ def _render_var_fast(fe: FilterExpression, context: Context):
         if context.autoescape:
             if isinstance(value, SafeData):
                 return value
-            return _fast_escape(value)
+            return _fast_escape_raw(value)
         return value
 
     # Int fast path: localized int strings never contain HTML special chars,
@@ -1773,7 +1798,7 @@ def _render_var_with_value(fe: FilterExpression, value, context: Context):
             if context.autoescape:
                 if is_safe and was_safe:
                     return value
-                return _fast_escape(value)
+                return _fast_escape_raw(value)
             return value
         else:
             f_args: list = fi.args
@@ -1785,7 +1810,7 @@ def _render_var_with_value(fe: FilterExpression, value, context: Context):
                 if context.autoescape:
                     if isinstance(value, SafeData):
                         return value
-                    return _fast_escape(value)
+                    return _fast_escape_raw(value)
                 return value
             # Non-str filter result: fall through
 
@@ -1794,7 +1819,7 @@ def _render_var_with_value(fe: FilterExpression, value, context: Context):
         if context.autoescape:
             if isinstance(value, SafeData):
                 return value
-            return _fast_escape(value)
+            return _fast_escape_raw(value)
         return value
 
     # Int fast path: localized int strings never contain HTML special chars.

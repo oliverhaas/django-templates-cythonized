@@ -20,7 +20,7 @@ from django.utils.lorem_ipsum import paragraphs, words
 from .html import conditional_escape, escape
 from .safestring import SafeData, SafeString, mark_safe
 
-from cython.cimports.django_templates_cythonized.base import Node, TextNode, NodeList, VariableNode, FilterExpression, _fast_escape, _render_var_fast, _fe_is_direct_loopvar, _render_var_with_value, _resolve_fe_raw
+from cython.cimports.django_templates_cythonized.base import Node, TextNode, NodeList, VariableNode, FilterExpression, _fast_escape, _fast_escape_raw, _render_var_fast, _fe_is_direct_loopvar, _render_var_with_value, _resolve_fe_raw
 from cython.cimports.django_templates_cythonized.context import Context
 from cython.cimports.django_templates_cythonized.formats import localize, _float_is_str_fast
 from cython.cimports.django_templates_cythonized.smartif import Literal, Operator, TokenBase
@@ -158,7 +158,7 @@ class CycleNode(Node):
             value = self._preresolved[idx]
             if self.variable_name:
                 context.set_upward(self.variable_name, value)
-            if context.autoescape and self._needs_escape:
+            if context.autoescape and self._needs_escape and not isinstance(value, SafeData):
                 return escape(value)
             return value
         # General path
@@ -750,7 +750,7 @@ class ForNode(Node):
                                     if isinstance(_av, SafeData):
                                         nodelist[idx] = _av
                                     else:
-                                        nodelist[idx] = _fast_escape(_av)
+                                        nodelist[idx] = _fast_escape_raw(_av)
                                 else:
                                     nodelist[idx] = _av
                             elif isinstance(_av, int) and not isinstance(_av, bool):
@@ -830,6 +830,14 @@ class ForNode(Node):
                                             _if_val = getattr(item, _if_same_attr)
                                         except (TypeError, AttributeError):
                                             _if_val = None
+                                # Callable attrs must be invoked (Django's
+                                # _resolve_lookup calls them). Fall back to
+                                # generic render to handle do_not_call_in_templates,
+                                # alters_data, and TypeError/signature checks.
+                                if callable(_if_val):
+                                    nodelist[idx] = loop_nodes[j].render(context)
+                                    idx += 1
+                                    continue
                                 for _if_entry in _if_info:
                                     _if_op: cython.int = _if_entry[1]
                                     _if_rhs = _if_entry[2]
@@ -900,6 +908,11 @@ class ForNode(Node):
                                                 _if_val = getattr(item, _if_attr)
                                             except (TypeError, AttributeError):
                                                 _if_val = None
+                                    # Callable attrs: fall back to generic render
+                                    if callable(_if_val):
+                                        nodelist[idx] = loop_nodes[j].render(context)
+                                        _if_matched = True
+                                        break
                                     _cmp_ok = False
                                     try:
                                         if _if_op == -1:
@@ -940,7 +953,7 @@ class ForNode(Node):
                                 # Write to top dict directly (avoids set_upward's
                                 # O(n_dicts) scan — cycle var is always in top dict)
                                 top[_cyc.variable_name] = _cyc_val
-                            if _ae and _cyc._needs_escape:
+                            if _ae and _cyc._needs_escape and not isinstance(_cyc_val, SafeData):
                                 nodelist[idx] = escape(_cyc_val)
                             else:
                                 nodelist[idx] = _cyc_val
