@@ -50,6 +50,9 @@ dev = [
 [tool.setuptools.packages.find]
 include = ["django_templates_cythonized*"]
 
+[tool.setuptools.package-data]
+django_templates_cythonized = ["*.pxd"]
+
 [tool.ruff]
 target-version = "py312"
 line-length = 120
@@ -124,3 +127,12 @@ omit = ["tests/*"]
 [tool.coverage.report]
 precision = 2
 skip_covered = true
+
+[tool.cibuildwheel]
+build = "cp312-* cp313-* cp314-*"
+skip = "*-win32 *-manylinux_i686 *-musllinux*"
+build-frontend = "build[uv]"
+test-command = "python -c \"import django_templates_cythonized\""
+
+[tool.cibuildwheel.linux]
+archs = "x86_64"
