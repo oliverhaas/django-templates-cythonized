@@ -5,12 +5,17 @@ Every test renders with both stock Django and our cythonized engine,
 asserting byte-for-byte identical output.
 """
 
+import copy
 import datetime
+import os
 
 import pytest
-from django.test import override_settings
+from django.test import RequestFactory, override_settings
 from django.template import engines
+from django.utils.functional import lazy
 from django.utils.safestring import SafeString, mark_safe
+
+from django_templates_cythonized.exceptions import TemplateSyntaxError
 
 
 # ---------------------------------------------------------------------------
@@ -1724,7 +1729,7 @@ class TestLoopIfConstNestedOperators:
 
 
 class TestResetCycle:
-    """Tests for {% resetcycle %} inside loops."""
+    """Comprehensive resetcycle tests from Django's test suite."""
 
     def test_resetcycle_resets_cycle_counter(self, stock, cyth):
         """{% resetcycle %} should restart the cycle from the beginning."""
@@ -1750,14 +1755,110 @@ class TestResetCycle:
            "{% endfor %}",
            {"items": ["a", "b", "c", "d"]})
 
+    def test_resetcycle_no_cycles(self, cyth):
+        """resetcycle with no cycles should raise TemplateSyntaxError."""
+        with pytest.raises(TemplateSyntaxError, match="No cycles in template"):
+            cyth.from_string("{% resetcycle %}")
+
+    def test_resetcycle_undefined(self, cyth):
+        """resetcycle with undefined name should raise TemplateSyntaxError."""
+        with pytest.raises(TemplateSyntaxError, match="does not exist"):
+            cyth.from_string("{% resetcycle undefinedcycle %}")
+
+    def test_resetcycle_undefined_with_cycle(self, cyth):
+        """resetcycle with undefined name when unnamed cycle exists."""
+        with pytest.raises(TemplateSyntaxError, match="does not exist"):
+            cyth.from_string("{% cycle 'a' 'b' %}{% resetcycle undefinedcycle %}")
+
+    def test_resetcycle_undefined_with_named_cycle(self, cyth):
+        """resetcycle with undefined name when different named cycle exists."""
+        with pytest.raises(TemplateSyntaxError, match="does not exist"):
+            cyth.from_string(
+                "{% cycle 'a' 'b' as ab %}{% resetcycle undefinedcycle %}"
+            )
+
+    def test_resetcycle_simple(self, stock, cyth):
+        """Simple unnamed resetcycle resets the cycle each iteration."""
+        _m(stock, cyth,
+           "{% for i in test %}{% cycle 'a' 'b' %}{% resetcycle %}{% endfor %}",
+           {"test": list(range(5))})
+
+    def test_resetcycle_multiple_cycles(self, stock, cyth):
+        """Named cycle from outside loop + unnamed cycle in loop.
+        Unnamed resetcycle resets the LAST cycle (unnamed one)."""
+        _m(stock, cyth,
+           "{% cycle 'a' 'b' 'c' as abc %}"
+           "{% for i in test %}"
+           "{% cycle abc %}"
+           "{% cycle '-' '+' %}"
+           "{% resetcycle %}"
+           "{% endfor %}",
+           {"test": list(range(5))})
+
+    def test_resetcycle_named_reset(self, stock, cyth):
+        """resetcycle with name resets only the named cycle."""
+        _m(stock, cyth,
+           "{% cycle 'a' 'b' 'c' as abc %}"
+           "{% for i in test %}"
+           "{% resetcycle abc %}"
+           "{% cycle abc %}"
+           "{% cycle '-' '+' %}"
+           "{% endfor %}",
+           {"test": list(range(5))})
+
+    def test_resetcycle_nested_loops(self, stock, cyth):
+        """resetcycle in outer loop resets inner loop's cycle."""
+        _m(stock, cyth,
+           "{% for i in outer %}"
+           "{% for j in inner %}"
+           "{% cycle 'a' 'b' %}"
+           "{% endfor %}"
+           "{% resetcycle %}"
+           "{% endfor %}",
+           {"outer": list(range(2)), "inner": list(range(3))})
+
+    def test_resetcycle_nested_multiple_cycles(self, stock, cyth):
+        """Nested loops with multiple cycles and resetcycle."""
+        _m(stock, cyth,
+           "{% for i in outer %}"
+           "{% cycle 'a' 'b' %}"
+           "{% for j in inner %}"
+           "{% cycle 'X' 'Y' %}"
+           "{% endfor %}"
+           "{% resetcycle %}"
+           "{% endfor %}",
+           {"outer": list(range(2)), "inner": list(range(3))})
+
+    def test_resetcycle_conditional(self, stock, cyth):
+        """Conditional resetcycle on specific named cycle."""
+        _m(stock, cyth,
+           "{% for i in test %}"
+           "{% cycle 'X' 'Y' 'Z' as XYZ %}"
+           "{% cycle 'a' 'b' 'c' as abc %}"
+           "{% if i == 1 %}"
+           "{% resetcycle abc %}"
+           "{% endif %}"
+           "{% endfor %}",
+           {"test": list(range(5))})
+
+    def test_resetcycle_conditional_other(self, stock, cyth):
+        """Conditional resetcycle on the other named cycle."""
+        _m(stock, cyth,
+           "{% for i in test %}"
+           "{% cycle 'X' 'Y' 'Z' as XYZ %}"
+           "{% cycle 'a' 'b' 'c' as abc %}"
+           "{% if i == 1 %}"
+           "{% resetcycle XYZ %}"
+           "{% endif %}"
+           "{% endfor %}",
+           {"test": list(range(5))})
+
 
 class TestRequestContext:
     """Tests for RequestContext rendering (cclass/Python class boundary)."""
 
     def test_request_context_rendering(self, stock, cyth):
         """RequestContext should render templates identically via backend.render()."""
-        from django.test import RequestFactory
-
         factory = RequestFactory()
         request = factory.get("/")
 
@@ -1772,8 +1873,6 @@ class TestRequestContext:
 
     def test_request_context_with_variables(self, stock, cyth):
         """RequestContext rendering with loops and filters."""
-        from django.test import RequestFactory
-
         factory = RequestFactory()
         request = factory.get("/")
 
@@ -1787,7 +1886,6 @@ class TestRequestContext:
 
     def test_request_context_direct_construction(self):
         """Our RequestContext (regular class inheriting from cclass) works."""
-        from django.test import RequestFactory
         from django_templates_cythonized.context import RequestContext as CythRequestContext
 
         factory = RequestFactory()
@@ -2161,16 +2259,6 @@ class TestLoopCycleEdgeCases:
            "{{ rowclass }}-{{ x }},"
            "{% endfor %}",
            {"items": [1, 2, 3, 4]})
-
-    def test_cycle_with_resetcycle(self, stock, cyth):
-        """Cycle with resetcycle resets the cycle counter."""
-        _m(stock, cyth,
-           "{% for x in items %}"
-           "{% cycle 'a' 'b' 'c' as letter %}"
-           "{% if forloop.counter == 3 %}{% resetcycle letter %}{% endif %}"
-           "{{ letter }},"
-           "{% endfor %}",
-           {"items": [1, 2, 3, 4, 5, 6]})
 
     def test_cycle_silent(self, stock, cyth):
         """{% cycle ... as var silent %} does not output."""
@@ -2660,28 +2748,23 @@ class TestQuerystringTag:
         return s
 
     def test_basic_kwargs(self, stock, cyth):
-        from django.test import RequestFactory
         self._qs(stock, cyth, "{% querystring foo='bar' %}",
                  RequestFactory().get("/"))
 
     def test_override_existing(self, stock, cyth):
-        from django.test import RequestFactory
         self._qs(stock, cyth, "{% querystring foo='new' %}",
                  RequestFactory().get("/?foo=old"))
 
     def test_remove_key(self, stock, cyth):
-        from django.test import RequestFactory
         self._qs(stock, cyth, "{% querystring foo=None %}",
                  RequestFactory().get("/?foo=bar&baz=qux"))
 
     def test_custom_dict(self, stock, cyth):
-        from django.test import RequestFactory
         self._qs(stock, cyth, "{% querystring my_dict page=2 %}",
                  RequestFactory().get("/"), {"my_dict": {"sort": "name"}})
 
     def test_querydict_multivalue(self, stock, cyth):
         """QueryDict with multiple values for same key should preserve all."""
-        from django.test import RequestFactory
         from django.http import QueryDict
         qd = QueryDict("color=red&color=blue", mutable=False)
         self._qs(stock, cyth, "{% querystring qd %}",
@@ -2689,7 +2772,6 @@ class TestQuerystringTag:
 
     def test_iterable_none_filtering(self, stock, cyth):
         """None values in iterables should be stripped."""
-        from django.test import RequestFactory
         self._qs(stock, cyth, "{% querystring tags=tag_list %}",
                  RequestFactory().get("/"), {"tag_list": ["a", None, "b"]})
 
@@ -2702,22 +2784,18 @@ class TestTemplateExceptions:
     """Template syntax error tests."""
 
     def test_unknown_tag(self, cyth):
-        from django_templates_cythonized.exceptions import TemplateSyntaxError
         with pytest.raises(TemplateSyntaxError):
             cyth.from_string("{% unknown_tag %}")
 
     def test_unclosed_block(self, cyth):
-        from django_templates_cythonized.exceptions import TemplateSyntaxError
         with pytest.raises(TemplateSyntaxError):
             cyth.from_string("{% if True %}unclosed")
 
     def test_unexpected_endblock(self, cyth):
-        from django_templates_cythonized.exceptions import TemplateSyntaxError
         with pytest.raises(TemplateSyntaxError):
             cyth.from_string("{% endif %}")
 
     def test_invalid_filter(self, cyth):
-        from django_templates_cythonized.exceptions import TemplateSyntaxError
         with pytest.raises(TemplateSyntaxError):
             cyth.from_string("{{ var|nonexistent_filter }}")
 
@@ -2730,7 +2808,6 @@ class TestLoadTag:
     """Tests for {% load %} tag."""
 
     def test_load_nonexistent(self, cyth):
-        from django_templates_cythonized.exceptions import TemplateSyntaxError
         with pytest.raises(TemplateSyntaxError):
             cyth.from_string("{% load nonexistent_lib %}")
 
@@ -2748,3 +2825,414 @@ class TestNamedEndblock:
         """{% endblock name %} syntax should be accepted."""
         _m(stock, cyth,
            "{% extends 'base.html' %}{% block content %}X{% endblock content %}")
+
+
+# ===========================================================================
+# EXCEPTION PROPAGATION & SEGFAULT SAFETY
+# ===========================================================================
+
+class _SilentException(Exception):
+    silent_variable_failure = True
+
+
+class _NoisyException(Exception):
+    pass
+
+
+class _ExceptionTestObj:
+    def method_silent(self):
+        raise _SilentException
+
+    def method_noisy(self):
+        raise _NoisyException
+
+    def __getitem__(self, key):
+        if key == "silent_fail_key":
+            raise _SilentException
+        elif key == "noisy_fail_key":
+            raise _NoisyException
+        raise KeyError
+
+    @property
+    def silent_fail_attribute(self):
+        raise _SilentException
+
+    @property
+    def noisy_fail_attribute(self):
+        raise _NoisyException
+
+    @property
+    def attribute_error_attribute(self):
+        raise AttributeError
+
+
+class TestExceptionPropagation:
+    """Variable resolution must propagate non-silent exceptions and suppress silent ones."""
+
+    def test_empty_block_tag(self, cyth):
+        """{% %} should raise TemplateSyntaxError, not segfault."""
+        with pytest.raises(TemplateSyntaxError, match="Empty block tag"):
+            cyth.from_string("{% %}")
+
+    def test_method_raises_non_silent(self, stock, cyth):
+        """{{ var.method }} where method raises non-silent exception must propagate."""
+        with pytest.raises(_NoisyException):
+            cyth.from_string("{{ var.method_noisy }}").render({"var": _ExceptionTestObj()})
+
+    def test_getitem_raises_non_silent(self, stock, cyth):
+        """{{ var.noisy_fail_key }} where __getitem__ raises must propagate."""
+        with pytest.raises(_NoisyException):
+            cyth.from_string("{{ var.noisy_fail_key }}").render({"var": _ExceptionTestObj()})
+
+    def test_property_raises_non_silent(self, stock, cyth):
+        """{{ var.noisy_fail_attribute }} where property raises must propagate."""
+        with pytest.raises(_NoisyException):
+            cyth.from_string("{{ var.noisy_fail_attribute }}").render(
+                {"var": _ExceptionTestObj()}
+            )
+
+    def test_property_raises_attribute_error(self, stock, cyth):
+        """{{ var.attribute_error_attribute }} — AttributeError propagates."""
+        with pytest.raises(AttributeError):
+            cyth.from_string("{{ var.attribute_error_attribute }}").render(
+                {"var": _ExceptionTestObj()}
+            )
+
+    def test_silent_method_produces_empty(self, stock, cyth):
+        """Silent exceptions should produce empty string, not crash."""
+        _m(stock, cyth, "{{ var.method_silent }}", {"var": _ExceptionTestObj()})
+
+    def test_silent_getitem_produces_empty(self, stock, cyth):
+        """Silent __getitem__ exception should produce empty string."""
+        _m(stock, cyth, "{{ var.silent_fail_key }}", {"var": _ExceptionTestObj()})
+
+    def test_silent_attribute_produces_empty(self, stock, cyth):
+        """Silent property exception should produce empty string."""
+        _m(stock, cyth, "{{ var.silent_fail_attribute }}", {"var": _ExceptionTestObj()})
+
+
+# ===========================================================================
+# SafeData PRESERVATION THROUGH STRINGFILTERS
+# ===========================================================================
+
+class _UnsafeObj:
+    def __str__(self):
+        return "you & me"
+
+
+class _SafeObj:
+    def __str__(self):
+        return mark_safe("you &gt; me")
+
+
+class TestSafeDataPreservation:
+    """Filters applied to objects whose __str__ returns SafeString must preserve safety."""
+
+    def test_unsafe_capfirst(self, stock, cyth):
+        _m(stock, cyth, "{{ obj|capfirst }}", {"obj": _UnsafeObj()})
+
+    def test_unsafe_capfirst_autoescape_off(self, stock, cyth):
+        _m(stock, cyth,
+           "{% autoescape off %}{{ obj|capfirst }}{% endautoescape %}",
+           {"obj": _UnsafeObj()})
+
+    def test_safe_capfirst(self, stock, cyth):
+        _m(stock, cyth, "{{ obj|capfirst }}", {"obj": _SafeObj()})
+
+    def test_safe_capfirst_autoescape_off(self, stock, cyth):
+        _m(stock, cyth,
+           "{% autoescape off %}{{ obj|capfirst }}{% endautoescape %}",
+           {"obj": _SafeObj()})
+
+    def test_safe_lower(self, stock, cyth):
+        _m(stock, cyth, "{{ obj|lower }}", {"obj": _SafeObj()})
+
+    def test_safe_upper(self, stock, cyth):
+        _m(stock, cyth, "{{ obj|upper }}", {"obj": _SafeObj()})
+
+
+# ===========================================================================
+# CONTEXT COMPATIBILITY
+# ===========================================================================
+
+class TestContextTypes:
+    """Template.render() must accept various context types."""
+
+    def test_render_with_our_context(self, cyth):
+        from django_templates_cythonized.context import Context
+        tpl = cyth.from_string("{{ greeting }}").template
+        ctx = Context({"greeting": "hello"})
+        assert tpl.render(ctx) == "hello"
+
+    def test_render_with_django_context(self, cyth):
+        from django.template import Context as DjangoContext
+        tpl = cyth.from_string("{{ greeting }}").template
+        ctx = DjangoContext({"greeting": "world"})
+        assert tpl.render(ctx) == "world"
+
+    def test_render_with_dict(self, cyth):
+        tpl = cyth.from_string("{{ greeting }}").template
+        assert tpl.render({"greeting": "dict"}) == "dict"
+
+
+# ===========================================================================
+# FILTER BOUNDS SAFETY
+# ===========================================================================
+
+class TestFilterBoundsSafety:
+    """Filters with list indexing must not segfault on empty inputs."""
+
+    def test_first_empty_list(self, stock, cyth):
+        _m(stock, cyth, "{{ items|first }}", {"items": []})
+
+    def test_last_empty_list(self, stock, cyth):
+        _m(stock, cyth, "{{ items|last }}", {"items": []})
+
+    def test_first_nonempty(self, stock, cyth):
+        _m(stock, cyth, "{{ items|first }}", {"items": ["a", "b", "c"]})
+
+    def test_last_nonempty(self, stock, cyth):
+        _m(stock, cyth, "{{ items|last }}", {"items": ["a", "b", "c"]})
+
+    def test_first_string(self, stock, cyth):
+        _m(stock, cyth, "{{ val|first }}", {"val": "hello"})
+
+    def test_last_string(self, stock, cyth):
+        _m(stock, cyth, "{{ val|last }}", {"val": "hello"})
+
+    def test_first_empty_string(self, stock, cyth):
+        _m(stock, cyth, "{{ val|first }}", {"val": ""})
+
+    def test_last_empty_string(self, stock, cyth):
+        _m(stock, cyth, "{{ val|last }}", {"val": ""})
+
+
+# ===========================================================================
+# SAFESTRING ESCAPING (firstof/cycle asvar, render_value_in_context)
+# ===========================================================================
+
+class TestSafeStringEscaping:
+    """Values stored back into context must be SafeString to prevent double-escaping."""
+
+    def test_firstof_asvar_html_content(self, stock, cyth):
+        _m(stock, cyth,
+           "{% firstof val as result %}{{ result }}",
+           {"val": "<b>hello</b>"})
+
+    def test_firstof_asvar_ampersand(self, stock, cyth):
+        _m(stock, cyth,
+           "{% firstof val as result %}{{ result }}",
+           {"val": "A & B"})
+
+    def test_firstof_asvar_safe_value(self, stock, cyth):
+        _m(stock, cyth,
+           "{% firstof val as result %}{{ result }}",
+           {"val": mark_safe("<b>bold</b>")})
+
+    def test_firstof_asvar_plain_text(self, stock, cyth):
+        _m(stock, cyth,
+           "{% firstof val as result %}{{ result }}",
+           {"val": "hello world"})
+
+    def test_firstof_asvar_fallback(self, stock, cyth):
+        _m(stock, cyth,
+           "{% firstof empty_val fallback as result %}{{ result }}",
+           {"empty_val": "", "fallback": "<em>test</em>"})
+
+    def test_cycle_asvar_html_content(self, stock, cyth):
+        _m(stock, cyth,
+           '{% for x in items %}{% cycle "<b>a</b>" "b" as cls %}{{ cls }}{% endfor %}',
+           {"items": [1, 2]})
+
+    def test_render_value_in_context_returns_safestring(self, stock, cyth):
+        from django_templates_cythonized.base import render_value_in_context
+        from django_templates_cythonized.context import Context
+        ctx = Context(autoescape=True)
+        ctx.template = stock.from_string("").template
+        result = render_value_in_context("hello <world>", ctx)
+        assert isinstance(result, SafeString), (
+            f"render_value_in_context should return SafeString, got {type(result).__name__}"
+        )
+
+
+# ===========================================================================
+# CALLABLE ATTRIBUTE RESOLUTION IN LOOPS
+# ===========================================================================
+
+class _CallableAttrObj:
+    def __init__(self, status):
+        self._status = status
+
+    def get_status(self):
+        return self._status
+
+    def is_active(self):
+        return self._status == "active"
+
+
+class TestCallableAttributeResolution:
+    """Loop optimizations must call callable attributes before comparison."""
+
+    def test_loopif_callable_eq(self, stock, cyth):
+        _m(stock, cyth,
+           '{% for book in books %}{% if book.get_status == "active" %}YES{% else %}NO{% endif %}{% endfor %}',
+           {"books": [_CallableAttrObj("active"), _CallableAttrObj("inactive")]})
+
+    def test_loopif_callable_ne(self, stock, cyth):
+        _m(stock, cyth,
+           '{% for book in books %}{% if book.get_status != "inactive" %}YES{% else %}NO{% endif %}{% endfor %}',
+           {"books": [_CallableAttrObj("active"), _CallableAttrObj("inactive")]})
+
+    def test_loopif_callable_truthiness(self, stock, cyth):
+        _m(stock, cyth,
+           '{% for book in books %}{% if book.is_active %}YES{% else %}NO{% endif %}{% endfor %}',
+           {"books": [_CallableAttrObj("active"), _CallableAttrObj("inactive")]})
+
+    def test_loopif_callable_with_elif(self, stock, cyth):
+        _m(stock, cyth,
+           '{% for book in books %}'
+           '{% if book.get_status == "active" %}A'
+           '{% elif book.get_status == "pending" %}P'
+           '{% else %}X{% endif %}'
+           '{% endfor %}',
+           {"books": [_CallableAttrObj("active"), _CallableAttrObj("pending"),
+                      _CallableAttrObj("other")]})
+
+    def test_loopattr_callable(self, stock, cyth):
+        _m(stock, cyth,
+           '{% for book in books %}{{ book.get_status }}{% endfor %}',
+           {"books": [_CallableAttrObj("active"), _CallableAttrObj("inactive")]})
+
+
+# ===========================================================================
+# CONTEXT __copy__ SEMANTICS
+# ===========================================================================
+
+class TestContextCopy:
+    """Context.__copy__ must preserve Python subclass __dict__ attributes."""
+
+    def test_requestcontext_copy_preserves_request(self):
+        from django_templates_cythonized.context import RequestContext
+        rf = RequestFactory()
+        request = rf.get("/")
+        rc = RequestContext(request, {"a": 1})
+        dup = copy.copy(rc)
+        assert hasattr(dup, "request"), "Copy of RequestContext lost 'request' attribute"
+        assert dup.request is request
+
+    def test_requestcontext_copy_preserves_processors(self):
+        from django_templates_cythonized.context import RequestContext
+        rf = RequestFactory()
+        request = rf.get("/")
+        rc = RequestContext(request, {"a": 1}, processors=[lambda r: {"extra": True}])
+        dup = copy.copy(rc)
+        assert hasattr(dup, "_processors"), "Copy of RequestContext lost '_processors'"
+        assert len(dup._processors) == 1
+
+    def test_requestcontext_new_preserves_request(self):
+        from django_templates_cythonized.context import RequestContext
+        rf = RequestFactory()
+        request = rf.get("/")
+        rc = RequestContext(request, {"a": 1})
+        new_ctx = rc.new({"b": 2})
+        assert hasattr(new_ctx, "request"), "new() context lost 'request' attribute"
+        assert new_ctx.request is request
+
+
+# ===========================================================================
+# INCLUDE FLATTENING (duplicate includes, stateful node isolation)
+# ===========================================================================
+
+TEMPLATES_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "templates")
+
+
+class TestIncludeFlattening:
+    """Include flattening must not share stateful nodes across duplicate includes."""
+
+    def test_duplicate_include_with_cycle(self, stock, cyth):
+        """Including the same template twice: each should start its cycle fresh."""
+        child_path = os.path.join(TEMPLATES_DIR, "_cycle_child.html")
+        try:
+            with open(child_path, "w") as f:
+                f.write('{% cycle "A" "B" %}')
+            tpl = '{% include "_cycle_child.html" %}|{% include "_cycle_child.html" %}'
+            _m(stock, cyth, tpl)
+        finally:
+            if os.path.exists(child_path):
+                os.unlink(child_path)
+
+    def test_duplicate_include_with_variable(self, stock, cyth):
+        child_path = os.path.join(TEMPLATES_DIR, "_var_child.html")
+        try:
+            with open(child_path, "w") as f:
+                f.write("{{ greeting }}")
+            tpl = '{% include "_var_child.html" %}|{% include "_var_child.html" %}'
+            _m(stock, cyth, tpl, {"greeting": "hello"})
+        finally:
+            if os.path.exists(child_path):
+                os.unlink(child_path)
+
+    def test_include_cycle_state_isolation(self, stock, cyth):
+        """Cycle state from included template should not leak into parent."""
+        child_path = os.path.join(TEMPLATES_DIR, "_cycle_leak.html")
+        try:
+            with open(child_path, "w") as f:
+                f.write('{% cycle "X" "Y" as c %}{{ c }}')
+            tpl = '{% include "_cycle_leak.html" %}|{% cycle "1" "2" as d %}{{ d }}'
+            _m(stock, cyth, tpl)
+        finally:
+            if os.path.exists(child_path):
+                os.unlink(child_path)
+
+
+# ===========================================================================
+# LAZY STRING (Promise) HANDLING
+# ===========================================================================
+
+class TestLazyStringHandling:
+    """conditional_escape must resolve Promise before SafeData check."""
+
+    def test_lazy_mark_safe_not_escaped(self):
+        from django_templates_cythonized.html import conditional_escape
+        lazy_safe = lazy(mark_safe, str)
+        val = lazy_safe("<b>bold</b>")
+        result = conditional_escape(val)
+        assert result == "<b>bold</b>"
+
+    def test_lazy_plain_string_escaped(self):
+        from django_templates_cythonized.html import conditional_escape
+        lazy_str = lazy(str, str)
+        val = lazy_str("<b>bold</b>")
+        result = conditional_escape(val)
+        assert "&lt;" in result
+
+    def test_format_html_with_lazy_safe(self):
+        from django_templates_cythonized.html import format_html
+        lazy_safe = lazy(mark_safe, str)
+        val = lazy_safe("<b>bold</b>")
+        result = format_html("{}", val)
+        assert result == "<b>bold</b>"
+
+
+# ===========================================================================
+# FORM RENDERER LANGUAGE CACHE
+# ===========================================================================
+
+class TestFormRendererLangCache:
+    """CythonizedFormRenderer must reset _lang between renders."""
+
+    def test_lang_reset_between_renders(self):
+        from django_templates_cythonized.backend import CythonizedFormRenderer, _form_ctx_local
+
+        renderer = CythonizedFormRenderer()
+
+        ctx = getattr(_form_ctx_local, "ctx", None)
+        if ctx is not None:
+            ctx._lang = "stale-xx"
+            renderer.render("django/forms/widgets/text.html", {"widget": {
+                "name": "test", "is_hidden": False, "required": False,
+                "value": "", "attrs": {"id": "id_test"}, "template_name": "django/forms/widgets/text.html",
+            }})
+            assert ctx._lang != "stale-xx", (
+                "_lang was not reset between renders — stale language cache"
+            )
