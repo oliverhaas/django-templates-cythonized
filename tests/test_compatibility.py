@@ -2347,3 +2347,404 @@ class TestLoopIfIsOperators:
            "{% if item.v is False %}F{% else %}NF{% endif %}"
            "{% endfor %}",
            {"items": [{"v": False}, {"v": 0}, {"v": ""}, {"v": None}]})
+
+
+# ---------------------------------------------------------------------------
+# Context operations (from Django's test_context.py)
+# ---------------------------------------------------------------------------
+
+class TestContextOperations:
+    """Tests for Context push/pop/set_upward/flatten/new/update."""
+
+    def test_push_pop(self, stock, cyth):
+        _m(stock, cyth,
+           "{% with x=1 %}{{ x }}{% endwith %}{{ x }}",
+           {"x": "outer"})
+
+    def test_nested_push(self, stock, cyth):
+        _m(stock, cyth,
+           "{% with x=1 %}{% with x=2 %}{{ x }}{% endwith %}{{ x }}{% endwith %}",
+           {})
+
+    def test_set_upward_via_cycle(self, stock, cyth):
+        """cycle 'as' uses set_upward — verify it works across scopes."""
+        _m(stock, cyth,
+           "{% for i in items %}{% cycle 'a' 'b' as rowclass %}{{ rowclass }}{% endfor %}",
+           {"items": [1, 2, 3, 4]})
+
+    def test_flatten_via_include_only(self, stock, cyth):
+        """{% include ... only %} uses context.new() which calls flatten internally."""
+        _m(stock, cyth,
+           "{% include 'flat_inner.html' only %}",
+           {"greeting": "hello"})
+
+    def test_context_update(self, stock, cyth):
+        """{% with %} is effectively context.update/push."""
+        _m(stock, cyth,
+           "{% with a=1 b=2 %}{{ a }}-{{ b }}{% endwith %}",
+           {})
+
+    def test_context_has_builtins(self, stock, cyth):
+        """True, False, None should be available in any context."""
+        _m(stock, cyth, "{{ True }}-{{ False }}-{{ None }}", {})
+
+    def test_context_overrides_builtins(self, stock, cyth):
+        """Context values should override builtins like True/False/None."""
+        _m(stock, cyth, "{{ True }}", {"True": "overridden"})
+
+
+# ---------------------------------------------------------------------------
+# TEMPLATE_STRING_IF_INVALID (from Django's test_invalid_string.py)
+# ---------------------------------------------------------------------------
+
+class TestStringIfInvalid:
+    """Tests that string_if_invalid is respected for missing variables."""
+
+    @pytest.fixture
+    def stock_inv(self):
+        from django.template import Engine
+        return Engine(string_if_invalid="INVALID")
+
+    @pytest.fixture
+    def cyth_inv(self):
+        from django_templates_cythonized.engine import Engine
+        return Engine(string_if_invalid="INVALID")
+
+    def test_missing_var(self, stock_inv, cyth_inv):
+        from django.template import Context
+        from django_templates_cythonized.context import Context as CContext
+        s = stock_inv.from_string("{{ missing }}").render(Context())
+        c = cyth_inv.from_string("{{ missing }}").render(CContext())
+        assert c == s == "INVALID"
+
+    def test_missing_var_with_filter(self, stock_inv, cyth_inv):
+        from django.template import Context
+        from django_templates_cythonized.context import Context as CContext
+        s = stock_inv.from_string("{{ missing|default:'fallback' }}").render(Context())
+        c = cyth_inv.from_string("{{ missing|default:'fallback' }}").render(CContext())
+        assert c == s
+
+    def test_present_var(self, stock_inv, cyth_inv):
+        from django.template import Context
+        from django_templates_cythonized.context import Context as CContext
+        s = stock_inv.from_string("{{ x }}").render(Context({"x": "hello"}))
+        c = cyth_inv.from_string("{{ x }}").render(CContext({"x": "hello"}))
+        assert c == s == "hello"
+
+    def test_empty_string_if_invalid(self, stock, cyth):
+        """Default string_if_invalid='' — missing vars produce empty string."""
+        _m(stock, cyth, "{{ missing }}", {})
+
+
+# ---------------------------------------------------------------------------
+# Callable edge cases (from Django's test_callables.py)
+# ---------------------------------------------------------------------------
+
+class AltersDataObj:
+    def dangerous(self):
+        return "DANGER"
+    dangerous.alters_data = True
+
+    def safe_method(self):
+        return "SAFE"
+
+
+class DoNotCallWholeObj:
+    def __init__(self, val):
+        self.val = val
+
+    def __call__(self):
+        return "SHOULD NOT SEE THIS"
+    do_not_call_in_templates = True
+
+    def __str__(self):
+        return self.val
+
+
+class TestCallables:
+    """Tests for callable handling: alters_data, do_not_call_in_templates."""
+
+    def test_callable_method(self, stock, cyth):
+        _m(stock, cyth, "{{ obj.get_value }}",
+           {"obj": CallableObj("hello")})
+
+    def test_alters_data(self, stock, cyth):
+        """Methods with alters_data=True should produce empty string."""
+        _m(stock, cyth, "{{ obj.dangerous }}", {"obj": AltersDataObj()})
+
+    def test_do_not_call_whole_object(self, stock, cyth):
+        """Objects with do_not_call_in_templates use __str__ instead."""
+        _m(stock, cyth, "{{ obj }}", {"obj": DoNotCallWholeObj("my-value")})
+
+    def test_alters_data_propagation(self, stock, cyth):
+        """Non-alters_data methods should render normally."""
+        _m(stock, cyth, "{{ obj.safe_method }}", {"obj": AltersDataObj()})
+
+
+# ---------------------------------------------------------------------------
+# Missing filter tests
+# ---------------------------------------------------------------------------
+
+class TestFilterDictsort:
+    def test_basic(self, stock, cyth):
+        _m(stock, cyth, "{% for item in items|dictsort:'name' %}{{ item.name }},{% endfor %}",
+           {"items": [{"name": "c"}, {"name": "a"}, {"name": "b"}]})
+
+    def test_reversed(self, stock, cyth):
+        _m(stock, cyth, "{% for item in items|dictsortreversed:'name' %}{{ item.name }},{% endfor %}",
+           {"items": [{"name": "c"}, {"name": "a"}, {"name": "b"}]})
+
+    def test_nested_key(self, stock, cyth):
+        _m(stock, cyth, "{% for item in items|dictsort:'info.age' %}{{ item.name }},{% endfor %}",
+           {"items": [{"name": "b", "info": {"age": 30}},
+                      {"name": "a", "info": {"age": 20}},
+                      {"name": "c", "info": {"age": 25}}]})
+
+
+class TestFilterTimesince:
+    def test_basic(self, stock, cyth):
+        import datetime as dt
+        now = dt.datetime(2025, 6, 15, 12, 0, 0)
+        past = now - dt.timedelta(days=3, hours=5)
+        _m(stock, cyth, "{{ past|timesince:now }}",
+           {"past": past, "now": now})
+
+    def test_timeuntil(self, stock, cyth):
+        import datetime as dt
+        now = dt.datetime(2025, 6, 15, 12, 0, 0)
+        future = now + dt.timedelta(days=2, hours=3)
+        _m(stock, cyth, "{{ future|timeuntil:now }}",
+           {"future": future, "now": now})
+
+
+class TestFilterUrlize:
+    def test_url(self, stock, cyth):
+        _m(stock, cyth, "{{ text|urlize }}",
+           {"text": "Visit https://example.com today"})
+
+    def test_urlizetrunc(self, stock, cyth):
+        _m(stock, cyth, "{{ text|urlizetrunc:15 }}",
+           {"text": "Visit https://example.com/very/long/path today"})
+
+    def test_email(self, stock, cyth):
+        _m(stock, cyth, "{{ text|urlize }}",
+           {"text": "Email me at user@example.com"})
+
+
+class TestFilterTruncateHtml:
+    def test_truncatechars_html(self, stock, cyth):
+        _m(stock, cyth, "{{ text|truncatechars_html:25 }}",
+           {"text": "<p>Hello <b>beautiful</b> world, this is long</p>"})
+
+    def test_truncatewords_html(self, stock, cyth):
+        _m(stock, cyth, "{{ text|truncatewords_html:3 }}",
+           {"text": "<p>Hello <b>beautiful</b> world, this is long</p>"})
+
+
+class TestFilterSafeseq:
+    def test_safeseq_join(self, stock, cyth):
+        _m(stock, cyth, '{{ items|safeseq|join:", " }}',
+           {"items": ["<b>a</b>", "<i>b</i>"]})
+
+
+class TestFilterUnorderedList:
+    def test_basic(self, stock, cyth):
+        _m(stock, cyth, "{{ items|unordered_list }}",
+           {"items": ["States", ["Kansas", ["Lawrence", "Topeka"], "Illinois"]]})
+
+
+class TestFilterLinenumbers:
+    def test_basic(self, stock, cyth):
+        _m(stock, cyth, "{{ text|linenumbers }}",
+           {"text": "line one\nline two\nline three"})
+
+
+class TestFilterPhone2numeric:
+    def test_basic(self, stock, cyth):
+        _m(stock, cyth, "{{ phone|phone2numeric }}",
+           {"phone": "1-800-COLLECT"})
+
+
+class TestFilterGetDigit:
+    def test_basic(self, stock, cyth):
+        _m(stock, cyth, "{{ num|get_digit:'2' }}",
+           {"num": 123})
+
+    def test_invalid(self, stock, cyth):
+        _m(stock, cyth, "{{ num|get_digit:'0' }}",
+           {"num": 123})
+
+
+class TestFilterIriencode:
+    def test_basic(self, stock, cyth):
+        _m(stock, cyth, "{{ url|iriencode }}",
+           {"url": "/path/to/page?q=hello world"})
+
+
+class TestFilterLjustRjust:
+    def test_ljust(self, stock, cyth):
+        _m(stock, cyth, "{{ val|ljust:'10' }}",
+           {"val": "hi"})
+
+    def test_rjust(self, stock, cyth):
+        _m(stock, cyth, "{{ val|rjust:'10' }}",
+           {"val": "hi"})
+
+
+class TestFilterEscapeseq:
+    """Django 5.0 escapeseq filter."""
+    def test_basic(self, stock, cyth):
+        _m(stock, cyth, '{{ items|escapeseq|join:", " }}',
+           {"items": ["<b>a</b>", "b & c"]})
+
+
+# ---------------------------------------------------------------------------
+# Extends edge cases (from Django's test_extends.py)
+# ---------------------------------------------------------------------------
+
+class TestExtendsEdgeCases:
+    """Extended template inheritance tests."""
+
+    def test_direct_extends(self, stock, cyth):
+        """Direct extends with block override."""
+        _m(stock, cyth,
+           "{% extends 'base.html' %}{% block content %}CHILD{% endblock %}")
+
+    def test_block_super(self, stock, cyth):
+        """{{ block.super }} in a child template."""
+        _m(stock, cyth,
+           "{% extends 'base.html' %}"
+           "{% block content %}{{ block.super }}+CHILD{% endblock %}")
+
+    def test_three_level_inheritance(self, stock, cyth):
+        """Three-level extends: grandchild -> middle -> base."""
+        result = _m(stock, cyth,
+           "{% extends 'middle.html' %}{% block content %}GRANDCHILD{% endblock %}")
+        assert "GRANDCHILD" in result
+
+    def test_title_override(self, stock, cyth):
+        """Override the title block."""
+        _m(stock, cyth,
+           "{% extends 'base.html' %}{% block title %}My Title{% endblock %}")
+
+
+# ---------------------------------------------------------------------------
+# Cache tag (from Django's test_cache.py)
+# ---------------------------------------------------------------------------
+
+class TestCacheTag:
+    def test_basic_cache(self, stock, cyth):
+        _m(stock, cyth,
+           "{% load cache %}{% cache 300 test_key %}CACHED{% endcache %}")
+
+    def test_cache_with_variable(self, stock, cyth):
+        _m(stock, cyth,
+           "{% load cache %}{% cache 300 test_key x %}{{ x }}{% endcache %}",
+           {"x": "hello"})
+
+
+# ---------------------------------------------------------------------------
+# Querystring tag (Django 5.1+)
+# ---------------------------------------------------------------------------
+
+class TestQuerystringTag:
+    """Tests for {% querystring %} tag including QueryDict.lists() support."""
+
+    @staticmethod
+    def _qs(stock, cyth, template_string, request, extra_context=None):
+        """Render querystring template with request context."""
+        ctx = extra_context or {}
+        s = stock.from_string(template_string).render(ctx, request=request)
+        c = cyth.from_string(template_string).render(ctx, request=request)
+        assert c == s, f"Mismatch!\n  stock: {s!r}\n  cyth:  {c!r}"
+        return s
+
+    def test_basic_kwargs(self, stock, cyth):
+        from django.test import RequestFactory
+        self._qs(stock, cyth, "{% querystring foo='bar' %}",
+                 RequestFactory().get("/"))
+
+    def test_override_existing(self, stock, cyth):
+        from django.test import RequestFactory
+        self._qs(stock, cyth, "{% querystring foo='new' %}",
+                 RequestFactory().get("/?foo=old"))
+
+    def test_remove_key(self, stock, cyth):
+        from django.test import RequestFactory
+        self._qs(stock, cyth, "{% querystring foo=None %}",
+                 RequestFactory().get("/?foo=bar&baz=qux"))
+
+    def test_custom_dict(self, stock, cyth):
+        from django.test import RequestFactory
+        self._qs(stock, cyth, "{% querystring my_dict page=2 %}",
+                 RequestFactory().get("/"), {"my_dict": {"sort": "name"}})
+
+    def test_querydict_multivalue(self, stock, cyth):
+        """QueryDict with multiple values for same key should preserve all."""
+        from django.test import RequestFactory
+        from django.http import QueryDict
+        qd = QueryDict("color=red&color=blue", mutable=False)
+        self._qs(stock, cyth, "{% querystring qd %}",
+                 RequestFactory().get("/"), {"qd": qd})
+
+    def test_iterable_none_filtering(self, stock, cyth):
+        """None values in iterables should be stripped."""
+        from django.test import RequestFactory
+        self._qs(stock, cyth, "{% querystring tags=tag_list %}",
+                 RequestFactory().get("/"), {"tag_list": ["a", None, "b"]})
+
+
+# ---------------------------------------------------------------------------
+# Template exceptions (from Django's test_exceptions.py)
+# ---------------------------------------------------------------------------
+
+class TestTemplateExceptions:
+    """Template syntax error tests."""
+
+    def test_unknown_tag(self, cyth):
+        from django_templates_cythonized.exceptions import TemplateSyntaxError
+        with pytest.raises(TemplateSyntaxError):
+            cyth.from_string("{% unknown_tag %}")
+
+    def test_unclosed_block(self, cyth):
+        from django_templates_cythonized.exceptions import TemplateSyntaxError
+        with pytest.raises(TemplateSyntaxError):
+            cyth.from_string("{% if True %}unclosed")
+
+    def test_unexpected_endblock(self, cyth):
+        from django_templates_cythonized.exceptions import TemplateSyntaxError
+        with pytest.raises(TemplateSyntaxError):
+            cyth.from_string("{% endif %}")
+
+    def test_invalid_filter(self, cyth):
+        from django_templates_cythonized.exceptions import TemplateSyntaxError
+        with pytest.raises(TemplateSyntaxError):
+            cyth.from_string("{{ var|nonexistent_filter }}")
+
+
+# ---------------------------------------------------------------------------
+# Load tag edge cases
+# ---------------------------------------------------------------------------
+
+class TestLoadTag:
+    """Tests for {% load %} tag."""
+
+    def test_load_nonexistent(self, cyth):
+        from django_templates_cythonized.exceptions import TemplateSyntaxError
+        with pytest.raises(TemplateSyntaxError):
+            cyth.from_string("{% load nonexistent_lib %}")
+
+    def test_load_builtin(self, stock, cyth):
+        """Loading a lib that's already builtin should work."""
+        _m(stock, cyth, "{% load cache %}{% cache 300 k %}ok{% endcache %}")
+
+
+# ---------------------------------------------------------------------------
+# Named endblock
+# ---------------------------------------------------------------------------
+
+class TestNamedEndblock:
+    def test_named_endblock(self, stock, cyth):
+        """{% endblock name %} syntax should be accepted."""
+        _m(stock, cyth,
+           "{% extends 'base.html' %}{% block content %}X{% endblock content %}")
