@@ -9,7 +9,19 @@ SECRET_KEY = "django_tests_secret_key"
 INSTALLED_APPS = [
     "django.contrib.contenttypes",
     "django.contrib.auth",
+    "django.contrib.admin",
+    "django.contrib.sessions",
+    "django.contrib.messages",
 ]
+
+MIDDLEWARE = [
+    "django.contrib.sessions.middleware.SessionMiddleware",
+    "django.middleware.csrf.CsrfViewMiddleware",
+    "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "django.contrib.messages.middleware.MessageMiddleware",
+]
+
+ROOT_URLCONF = "tests.urls"
 
 DATABASES = {
     "default": {

@@ -15,8 +15,12 @@ def _context_lookup(dicts: list, key):
     """C-level reverse dict scan — no Python frame overhead."""
     i: cython.int
     for i in range(len(dicts) - 1, -1, -1):
-        d: dict = dicts[i]
-        if key in d:
+        d = dicts[i]
+        if type(d) is dict:
+            dd: dict = d
+            if key in dd:
+                return dd[key]
+        elif key in d:
             return d[key]
     return _MISSING
 

@@ -57,7 +57,7 @@ import logging
 import re
 import warnings
 from datetime import datetime as _datetime_type
-from enum import Enum
+from django.template.base import TokenType
 
 from .context import BaseContext
 # C-level cimports: in compiled mode, these use cpdef fast path (C-level call);
@@ -99,13 +99,6 @@ UNKNOWN_SOURCE = "<unknown source>"
 tag_re = re.compile(r"({%.*?%}|{{.*?}}|{#.*?#})")
 
 logger = logging.getLogger("django.template")
-
-
-class TokenType(Enum):
-    TEXT = 0
-    VAR = 1
-    BLOCK = 2
-    COMMENT = 3
 
 
 class VariableDoesNotExist(Exception):
@@ -1518,8 +1511,13 @@ def _resolve_fe_raw(fe: FilterExpression, context: Context):
     i: cython.Py_ssize_t
     value = _RESOLVE_FALLBACK
     for i in range(n_dicts - 1, -1, -1):
-        d: dict = dicts[i]
-        if key in d:
+        d = dicts[i]
+        if type(d) is dict:
+            dd: dict = d
+            if key in dd:
+                value = dd[key]
+                break
+        elif key in d:
             value = d[key]
             break
 
@@ -1602,8 +1600,14 @@ def _render_var_fast(fe: FilterExpression, context: Context):
         value = None
         found: cython.bint = False
         for i in range(n_dicts - 1, -1, -1):
-            d: dict = dicts[i]
-            if key in d:
+            d = dicts[i]
+            if type(d) is dict:
+                dd: dict = d
+                if key in dd:
+                    value = dd[key]
+                    found = True
+                    break
+            elif key in d:
                 value = d[key]
                 found = True
                 break

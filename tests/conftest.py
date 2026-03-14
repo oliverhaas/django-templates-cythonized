@@ -6,6 +6,11 @@ import django
 
 django.setup()
 
+# Create database tables for admin integration tests (in-memory SQLite).
+from django.core.management import call_command
+
+call_command("migrate", "--run-syncdb", verbosity=0)
+
 import pytest
 from django.template import engines
 

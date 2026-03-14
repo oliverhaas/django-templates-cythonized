@@ -3,10 +3,18 @@ This module contains generic exceptions used by template backends. Although,
 due to historical reasons, the Django template language also internally uses
 these exceptions, other exceptions specific to the DTL should not be added
 here.
+
+We inherit from Django's stock exceptions so that code catching
+``django.template.TemplateDoesNotExist`` also catches ours.
 """
 
+from django.template.exceptions import (
+    TemplateDoesNotExist as _DjangoTemplateDoesNotExist,
+    TemplateSyntaxError as _DjangoTemplateSyntaxError,
+)
 
-class TemplateDoesNotExist(Exception):
+
+class TemplateDoesNotExist(_DjangoTemplateDoesNotExist):
     """
     The exception used when a template does not exist. Optional arguments:
 
@@ -25,18 +33,10 @@ class TemplateDoesNotExist(Exception):
         engines.
     """
 
-    def __init__(self, msg, tried=None, backend=None, chain=None):
-        self.backend = backend
-        if tried is None:
-            tried = []
-        self.tried = tried
-        if chain is None:
-            chain = []
-        self.chain = chain
-        super().__init__(msg)
+    pass
 
 
-class TemplateSyntaxError(Exception):
+class TemplateSyntaxError(_DjangoTemplateSyntaxError):
     """
     The exception used for syntax errors during parsing or rendering.
     """
