@@ -2215,3 +2215,135 @@ class TestConstVarCacheEdgeCases:
            "{{ currency }}-{{ x }},"
            "{% endfor %}",
            {"items": [1, 2, 3], "currency": "USD"})
+
+
+# ---------------------------------------------------------------------------
+# Include flattening tests
+# ---------------------------------------------------------------------------
+
+class TestIncludeFlattening:
+    """Tests for compile-time include flattening."""
+
+    def test_simple_include_flattened(self, stock, cyth):
+        """Basic include produces same output after flattening."""
+        _m(stock, cyth,
+           '{% include "flat_outer.html" %}',
+           {"inner_val": "hello"})
+
+    def test_chained_includes_flattened(self, stock, cyth):
+        """A -> B -> C include chain produces correct output."""
+        _m(stock, cyth,
+           '{% include "flat_chain_a.html" %}',
+           {"c_val": "deep"})
+
+    def test_include_in_for_loop(self, stock, cyth):
+        """Include inside for loop produces same output."""
+        _m(stock, cyth,
+           '{% for item in items %}{% include "flat_inner.html" %}{% endfor %}',
+           {"items": [{"inner_val": "a"}, {"inner_val": "b"}],
+            "inner_val": "fallback"})
+
+    def test_include_with_extra_context_not_flattened(self, stock, cyth):
+        """Include with extra context is NOT flattened but still works."""
+        _m(stock, cyth,
+           '{% include "include_target.html" with message="hi" %}',
+           {})
+
+    def test_include_with_isolated_context_not_flattened(self, stock, cyth):
+        """Include with only keyword is NOT flattened but still works."""
+        _m(stock, cyth,
+           '{% include "include_target.html" with message="hi" only %}',
+           {"message": "should_not_appear"})
+
+    def test_include_variable_template_not_flattened(self, stock, cyth):
+        """Include with variable template name is NOT flattened."""
+        _m(stock, cyth,
+           '{% include tpl_name %}',
+           {"tpl_name": "include_target.html", "message": "dynamic"})
+
+    def test_include_in_if_branch(self, stock, cyth):
+        """Include inside an if branch is correctly flattened."""
+        _m(stock, cyth,
+           '{% if show %}{% include "flat_inner.html" %}{% endif %}',
+           {"show": True, "inner_val": "visible"})
+
+    def test_include_in_if_branch_false(self, stock, cyth):
+        """Include in if branch that's not taken still renders correctly."""
+        _m(stock, cyth,
+           '{% if show %}{% include "flat_inner.html" %}{% else %}none{% endif %}',
+           {"show": False, "inner_val": "invisible"})
+
+
+# ---------------------------------------------------------------------------
+# LOOPIF is/is not operator tests
+# ---------------------------------------------------------------------------
+
+class TestLoopIfIsOperators:
+    """Tests for is/is not operators in LOOPIF-classified for loops."""
+
+    def test_is_true(self, stock, cyth):
+        """{% if item.flag is True %} inside a for loop."""
+        _m(stock, cyth,
+           "{% for item in items %}"
+           "{% if item.flag is True %}T{% else %}F{% endif %}"
+           "{% endfor %}",
+           {"items": [{"flag": True}, {"flag": False}, {"flag": None}, {"flag": 1}]})
+
+    def test_is_false(self, stock, cyth):
+        """{% if item.flag is False %} inside a for loop."""
+        _m(stock, cyth,
+           "{% for item in items %}"
+           "{% if item.flag is False %}F{% else %}T{% endif %}"
+           "{% endfor %}",
+           {"items": [{"flag": True}, {"flag": False}, {"flag": None}, {"flag": 0}]})
+
+    def test_is_none(self, stock, cyth):
+        """{% if item.val is None %} inside a for loop."""
+        _m(stock, cyth,
+           "{% for item in items %}"
+           "{% if item.val is None %}N{% else %}V{% endif %}"
+           "{% endfor %}",
+           {"items": [{"val": None}, {"val": ""}, {"val": 0}, {"val": "x"}]})
+
+    def test_is_not_false(self, stock, cyth):
+        """{% if item.val is not False %} — the attrs.html pattern."""
+        _m(stock, cyth,
+           "{% for item in items %}"
+           "{% if item.val is not False %}[{{ item.val }}]{% endif %}"
+           "{% endfor %}",
+           {"items": [{"val": "a"}, {"val": False}, {"val": True}, {"val": ""}]})
+
+    def test_is_not_true(self, stock, cyth):
+        """{% if item.val is not True %} — the attrs.html value display."""
+        _m(stock, cyth,
+           "{% for item in items %}"
+           "{% if item.val is not True %}={{ item.val }}{% else %}!{% endif %}"
+           "{% endfor %}",
+           {"items": [{"val": "a"}, {"val": True}, {"val": False}, {"val": 42}]})
+
+    def test_is_not_none(self, stock, cyth):
+        """{% if item.val is not None %} inside a for loop."""
+        _m(stock, cyth,
+           "{% for item in items %}"
+           "{% if item.val is not None %}[{{ item.val }}]{% endif %}"
+           "{% endfor %}",
+           {"items": [{"val": "a"}, {"val": None}, {"val": 0}, {"val": ""}]})
+
+    def test_attrs_pattern(self, stock, cyth):
+        """Full attrs.html pattern: is not False + is not True combo."""
+        _m(stock, cyth,
+           "{% for name, value in attrs.items %}"
+           "{% if value is not False %} {{ name }}"
+           "{% if value is not True %}=\"{{ value }}\"{% endif %}"
+           "{% endif %}"
+           "{% endfor %}",
+           {"attrs": {"class": "form-control", "required": True,
+                      "disabled": False, "id": "my-input"}})
+
+    def test_is_identity_not_equality(self, stock, cyth):
+        """is checks identity, not equality. 0 is not False, '' is not False."""
+        _m(stock, cyth,
+           "{% for item in items %}"
+           "{% if item.v is False %}F{% else %}NF{% endif %}"
+           "{% endfor %}",
+           {"items": [{"v": False}, {"v": 0}, {"v": ""}, {"v": None}]})

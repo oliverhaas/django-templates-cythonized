@@ -33,10 +33,10 @@ class BlockContext:
 
     @cython.ccall
     def pop(self, name):
-        try:
-            return self.blocks[name].pop()
-        except IndexError:
-            return None
+        _block_list = self.blocks[name]
+        if _block_list:
+            return _block_list.pop()
+        return None
 
     @cython.ccall
     def push(self, name, block):
@@ -44,10 +44,10 @@ class BlockContext:
 
     @cython.ccall
     def get_block(self, name):
-        try:
-            return self.blocks[name][-1]
-        except IndexError:
-            return None
+        _block_list = self.blocks[name]
+        if _block_list:
+            return _block_list[-1]
+        return None
 
 
 @cython.cclass

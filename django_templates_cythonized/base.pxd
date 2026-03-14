@@ -38,7 +38,7 @@ cdef class Template:
     cdef public NodeList nodelist
     cdef public dict extra_data
     cpdef _render(self, Context context)
-    cpdef render(self, Context context)
+    cpdef render(self, object context)
     cpdef compile_nodelist(self)
 
 cdef class FilterExpression:

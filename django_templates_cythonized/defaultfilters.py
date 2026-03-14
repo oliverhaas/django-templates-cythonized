@@ -608,8 +608,10 @@ def dictsortreversed(value, arg):
 def first(value):
     """Return the first item in a list."""
     try:
+        if not value:
+            return ""
         return value[0]
-    except IndexError:
+    except (IndexError, TypeError):
         return ""
 
 
@@ -630,8 +632,10 @@ def join(value, arg, autoescape=True):
 def last(value):
     """Return the last item in a list."""
     try:
+        if not value:
+            return ""
         return value[-1]
-    except IndexError:
+    except (IndexError, TypeError):
         return ""
 
 

@@ -48,7 +48,7 @@ from .base import (
 from .context import Context
 from .defaultfilters import date
 from .library import Library
-from .smartif import IfParser, Literal, OP_EQ, OP_NE, OP_GT, OP_GE, OP_LT, OP_LE
+from .smartif import IfParser, Literal, OP_IS, OP_IS_NOT, OP_EQ, OP_NE, OP_GT, OP_GE, OP_LT, OP_LE
 
 register = Library()
 
@@ -593,7 +593,7 @@ class ForNode(Node):
                                 # Comparison: {% if book.attr == literal %}
                                 _op: Operator = _cond
                                 _op_code: cython.int = _op.op_code
-                                if _op_code < OP_EQ or _op_code > OP_LE:
+                                if _op_code < OP_IS or _op_code > OP_LE:
                                     _if_ok = False
                                     break
                                 _op_first: TokenBase = _op.first
@@ -665,19 +665,26 @@ class ForNode(Node):
             # Pre-classify CycleNode for LOOPCYCLE optimization (tag 7).
             # For cycle nodes with pre-resolved literals and `as varname`,
             # inline the modulo counter and context write.
-            # Skip LOOPCYCLE for CycleNodes that have a matching ResetCycleNode
-            # in the loop body, since the inline path uses `i % n` and ignores
-            # the render_context counter that resetcycle resets.
+            # Skip LOOPCYCLE for CycleNodes that:
+            # 1. Have a matching ResetCycleNode in the loop body
+            # 2. Were already rendered before the loop (named cycle refs
+            #    like {% cycle abc %} which returns the same CycleNode
+            #    that was defined and rendered outside the loop)
             if _ntags is not None:
                 # Scan the ENTIRE loop nodelist (including nested nodes)
                 # for ResetCycleNodes, since they may be inside IfNode etc.
                 _reset_cycle_targets: set = set()
                 for _rcn in self.nodelist_loop.get_nodes_by_type(ResetCycleNode):
-                    _reset_cycle_targets.add(id(_rcn.node))
+                    _reset_cycle_targets.add(_rcn.node)
                 for j in range(num_nodes):
                     if _ntags[j] == 4 and isinstance(loop_nodes[j], CycleNode):
                         _cyc_nd: CycleNode = loop_nodes[j]
-                        if _cyc_nd._preresolved is not None and id(_cyc_nd) not in _reset_cycle_targets:
+                        if _cyc_nd._preresolved is not None and _cyc_nd not in _reset_cycle_targets:
+                            # Skip if cycle was already rendered (counter != 0).
+                            # This catches named cycle refs ({% cycle abc %})
+                            # where the cycle was used before the loop.
+                            if context.render_context.get(_cyc_nd, 0) != 0:
+                                continue
                             _ntags[j] = 7  # LOOPCYCLE
                             _nattrs[j] = _cyc_nd
 
@@ -852,6 +859,10 @@ class ForNode(Node):
                                             _cmp_ok = _if_val < _if_rhs
                                         elif _if_op == OP_LE:
                                             _cmp_ok = _if_val <= _if_rhs
+                                        elif _if_op == OP_IS:
+                                            _cmp_ok = _if_val is _if_rhs
+                                        elif _if_op == OP_IS_NOT:
+                                            _cmp_ok = _if_val is not _if_rhs
                                     except Exception:
                                         _cmp_ok = False
                                     if _cmp_ok:
@@ -905,6 +916,10 @@ class ForNode(Node):
                                             _cmp_ok = _if_val < _if_rhs
                                         elif _if_op == OP_LE:
                                             _cmp_ok = _if_val <= _if_rhs
+                                        elif _if_op == OP_IS:
+                                            _cmp_ok = _if_val is _if_rhs
+                                        elif _if_op == OP_IS_NOT:
+                                            _cmp_ok = _if_val is not _if_rhs
                                     except Exception:
                                         _cmp_ok = False
                                     if _cmp_ok:

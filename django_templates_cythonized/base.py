@@ -73,7 +73,7 @@ from django.utils.regex_helper import _lazy_re_compile
 from django.utils.text import get_text_list, smart_split, unescape_string_literal
 from django.utils.translation import gettext_lazy, pgettext_lazy
 
-from .exceptions import TemplateSyntaxError
+from .exceptions import TemplateDoesNotExist, TemplateSyntaxError
 
 
 # template syntax constants
@@ -145,7 +145,75 @@ class Origin:
             )
 
 
-@cython.cclass
+def _flatten_includes(nodelist, engine, seen):
+    """
+    Walk a NodeList and replace qualifying IncludeNodes with inlined nodes
+    from the included template. This eliminates Template.render() overhead
+    (render_context push/pop) for simple static includes.
+
+    Qualifying criteria for an IncludeNode:
+    - Template name is a compile-time literal string (not a variable)
+    - No extra_context
+    - Not isolated_context
+    - Not a relative path (./  or ../)
+    - No cycle (template not already being flattened)
+    """
+    from .loader_tags import IncludeNode
+
+    nodes: list = nodelist._nodes
+    i: cython.Py_ssize_t = 0
+    changed: cython.bint = False
+    while i < len(nodes):
+        node = nodes[i]
+        if isinstance(node, IncludeNode):
+            inc: IncludeNode = node
+            fe = inc.template
+            # Check all qualifying criteria
+            if (
+                not inc.isolated_context
+                and not inc.extra_context
+                and not fe.is_var
+                and isinstance(fe.var, str)
+                and not fe.filters
+            ):
+                tpl_name = fe.var
+                if not tpl_name.startswith(("./", "../")) and tpl_name not in seen:
+                    try:
+                        included_tpl = engine.get_template(tpl_name)
+                        # Unwrap backend _Template wrapper if needed
+                        if hasattr(included_tpl, 'template'):
+                            included_tpl = included_tpl.template
+                        included_nodes: list = included_tpl.nodelist._nodes
+                        # Splice included nodes in place of the IncludeNode
+                        seen.add(tpl_name)
+                        # Recursively flatten the included template's nodes first
+                        _flatten_includes(included_tpl.nodelist, engine, seen)
+                        # Now splice copies of included nodes into parent
+                        n_included = len(included_nodes)
+                        nodes[i:i+1] = included_nodes
+                        seen.discard(tpl_name)
+                        changed = True
+                        i += n_included
+                        continue
+                    except (TemplateDoesNotExist, AttributeError):
+                        pass  # If loading fails, keep the IncludeNode as-is
+        # Recurse into child nodelists of this node
+        if hasattr(node, 'child_nodelists'):
+            for attr in node.child_nodelists:
+                child_nl = getattr(node, attr, None)
+                if child_nl is not None and hasattr(child_nl, '_nodes'):
+                    _flatten_includes(child_nl, engine, seen)
+        # Special case: IfNode stores nodelists in conditions_nodelists
+        if hasattr(node, 'conditions_nodelists'):
+            for _cond, child_nl in node.conditions_nodelists:
+                if child_nl is not None and hasattr(child_nl, '_nodes'):
+                    _flatten_includes(child_nl, engine, seen)
+        i += 1
+    if changed:
+        # Recompute contains_nontext flag
+        nodelist.contains_nontext = any(not isinstance(n, TextNode) for n in nodes)
+
+
 @cython.cclass
 class Template:
 
@@ -177,8 +245,18 @@ class Template:
         return self.nodelist.render(context)
 
     @cython.ccall
-    def render(self, context: Context):
+    def render(self, context):
         "Display stage -- can be called many times"
+        if not isinstance(context, Context):
+            # Accept Django's stock Context or dict-like objects for compatibility.
+            if hasattr(context, 'flatten'):
+                context = Context(context.flatten())
+            elif isinstance(context, dict):
+                context = Context(context)
+            else:
+                raise TypeError(
+                    "context must be a Context or dict, got %s" % type(context).__name__
+                )
         # Inline push_state(self) — avoids contextlib generator + ContextDict overhead.
         rc = context.render_context
         _rc_initial = rc.template
@@ -228,6 +306,8 @@ class Template:
         try:
             nodelist = parser.parse()
             self.extra_data = parser.extra_data
+            if not self.engine.debug:
+                _flatten_includes(nodelist, self.engine, set())
             return nodelist
         except Exception as e:
             if self.engine.debug:
@@ -613,10 +693,10 @@ class Parser:
                 var_node = VariableNode(filter_expression)
                 self.extend_nodelist(nodelist, var_node, token)
             elif token_type == 2:  # TokenType.BLOCK
-                try:
-                    command = token.contents.split()[0]
-                except IndexError:
+                _parts = token.contents.split()
+                if not _parts:
                     raise self.error(token, "Empty block tag on line %d" % token.lineno)
+                command = _parts[0]
                 if command in parse_until:
                     # A matching token has been reached. Return control to
                     # the caller. Put the token back on the token list so the
@@ -1459,6 +1539,10 @@ def _resolve_fe_raw(fe: FilterExpression, context: Context):
                     value = getattr(value, attr)
                 except (TypeError, AttributeError):
                     return _RESOLVE_FALLBACK
+                except Exception:
+                    return _RESOLVE_FALLBACK
+            except Exception:
+                return _RESOLVE_FALLBACK
             if callable(value):
                 return _RESOLVE_FALLBACK
 
@@ -1541,6 +1625,14 @@ def _render_var_fast(fe: FilterExpression, context: Context):
                         value = getattr(value, attr)
                     except (TypeError, AttributeError):
                         return None
+                    except Exception:
+                        # Unexpected exception from getattr/property
+                        # (e.g. silent_variable_failure) — fall back.
+                        return None
+                except Exception:
+                    # Unexpected exception from __getitem__
+                    # (e.g. silent_variable_failure) — fall back.
+                    return None
                 if callable(value):
                     return None
 
@@ -1551,9 +1643,10 @@ def _render_var_fast(fe: FilterExpression, context: Context):
         if fast_code != 0:
             # C-level dispatch — bypass Python function call + @stringfilter wrapper
             is_safe: cython.bint = fi.is_safe
-            was_safe: cython.bint = isinstance(value, SafeData)
             if not isinstance(value, str):
                 value = str(value)
+            # Check SafeData AFTER str() — e.g. SafeClass.__str__ returns SafeString
+            was_safe: cython.bint = isinstance(value, SafeData)
             if fast_code == FFILTER_LOWER:
                 value = value.lower()
             elif fast_code == FFILTER_UPPER:
@@ -1662,9 +1755,10 @@ def _render_var_with_value(fe: FilterExpression, value, context: Context):
         fast_code: cython.int = fe._fast_filter
         if fast_code != 0:
             is_safe: cython.bint = fi.is_safe
-            was_safe: cython.bint = isinstance(value, SafeData)
             if not isinstance(value, str):
                 value = str(value)
+            # Check SafeData AFTER str() — e.g. SafeClass.__str__ returns SafeString
+            was_safe: cython.bint = isinstance(value, SafeData)
             if fast_code == FFILTER_LOWER:
                 value = value.lower()
             elif fast_code == FFILTER_UPPER:
