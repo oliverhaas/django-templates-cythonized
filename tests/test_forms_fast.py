@@ -2,6 +2,7 @@
 
 Compares output of CythonizedFormRenderer's direct HTML generators
 against stock Django template-based rendering for exact match.
+Also tests auto-compilation of custom widget templates.
 """
 
 import pytest
@@ -11,6 +12,10 @@ from django.utils.safestring import SafeString
 
 from django_templates_cythonized import backend as _backend
 from django_templates_cythonized.backend import CythonizedFormRenderer
+from django_templates_cythonized.forms import (
+    exec_compiled_template,
+    try_compile_widget_template,
+)
 
 
 @pytest.fixture(scope="module")
@@ -444,3 +449,203 @@ class TestTemplateOverrideGuard:
 
         # Restore: clear the poisoned entry so other tests aren't affected.
         _backend._fast_path_ok.pop(tpl_name, None)
+
+
+# --- Auto-compilation: unit tests for compiler + interpreter ---
+
+
+class TestAutoCompilationCompiler:
+    """Test the template AST compiler (try_compile_widget_template)."""
+
+    def test_compiles_input_pattern(self, fast_renderer):
+        """Stock input.html is compilable."""
+        tpl = fast_renderer.engine.get_template("django/forms/widgets/input.html").template
+        ops = try_compile_widget_template(tpl)
+        assert ops is not None
+        assert len(ops) > 0
+
+    def test_compiles_textarea_pattern(self, fast_renderer):
+        """Stock textarea.html is compilable."""
+        tpl = fast_renderer.engine.get_template("django/forms/widgets/textarea.html").template
+        ops = try_compile_widget_template(tpl)
+        assert ops is not None
+
+    def test_compiles_select_option(self, fast_renderer):
+        """Stock select_option.html is compilable."""
+        tpl = fast_renderer.engine.get_template("django/forms/widgets/select_option.html").template
+        ops = try_compile_widget_template(tpl)
+        assert ops is not None
+
+    def test_compiles_input_option(self, fast_renderer):
+        """Stock input_option.html is compilable (has nested IfNode)."""
+        tpl = fast_renderer.engine.get_template("django/forms/widgets/input_option.html").template
+        ops = try_compile_widget_template(tpl)
+        assert ops is not None
+
+    def test_rejects_select(self, fast_renderer):
+        """select.html has nested ForNode (optgroups) and is not compilable."""
+        tpl = fast_renderer.engine.get_template("django/forms/widgets/select.html").template
+        assert try_compile_widget_template(tpl) is None
+
+    def test_rejects_multiple_input(self, fast_renderer):
+        """multiple_input.html uses WithNode and is not compilable."""
+        tpl = fast_renderer.engine.get_template("django/forms/widgets/multiple_input.html").template
+        assert try_compile_widget_template(tpl) is None
+
+    def test_rejects_multiwidget(self, fast_renderer):
+        """multiwidget.html uses SpacelessNode and is not compilable."""
+        tpl = fast_renderer.engine.get_template("django/forms/widgets/multiwidget.html").template
+        assert try_compile_widget_template(tpl) is None
+
+
+class TestAutoCompilationInterpreter:
+    """Test the ops interpreter (exec_compiled_template) against stock Django."""
+
+    def test_input_matches_stock(self, stock_renderer, fast_renderer):
+        """Auto-compiled input.html matches stock Django output."""
+        tpl = fast_renderer.engine.get_template("django/forms/widgets/input.html").template
+        ops = try_compile_widget_template(tpl)
+
+        w = forms.TextInput()
+        ctx = w.get_context("field", "hello", {"id": "id_field"})
+        assert exec_compiled_template(ops, ctx) == stock_renderer.render(w.template_name, ctx).strip()
+
+    def test_input_none_value(self, stock_renderer, fast_renderer):
+        """Auto-compiled input with None value omits value attr."""
+        tpl = fast_renderer.engine.get_template("django/forms/widgets/input.html").template
+        ops = try_compile_widget_template(tpl)
+
+        w = forms.TextInput()
+        ctx = w.get_context("field", None, {"id": "id_field"})
+        assert exec_compiled_template(ops, ctx) == stock_renderer.render(w.template_name, ctx).strip()
+
+    def test_input_html_escaping(self, stock_renderer, fast_renderer):
+        """Auto-compiled input escapes HTML special chars."""
+        tpl = fast_renderer.engine.get_template("django/forms/widgets/input.html").template
+        ops = try_compile_widget_template(tpl)
+
+        w = forms.TextInput()
+        ctx = w.get_context("f", '<script>alert("xss")</script>', {"id": "id_f"})
+        result = exec_compiled_template(ops, ctx)
+        assert result == stock_renderer.render(w.template_name, ctx).strip()
+        assert "&lt;script&gt;" in result
+
+    def test_input_boolean_attrs(self, stock_renderer, fast_renderer):
+        """Auto-compiled input handles boolean True/False attrs."""
+        tpl = fast_renderer.engine.get_template("django/forms/widgets/input.html").template
+        ops = try_compile_widget_template(tpl)
+
+        w = forms.TextInput()
+        ctx = w.get_context("f", "val", {"id": "id_f", "required": True, "disabled": False})
+        result = exec_compiled_template(ops, ctx)
+        assert result == stock_renderer.render(w.template_name, ctx).strip()
+        assert "required" in result
+        assert "disabled" not in result
+
+    def test_input_safestring_value(self, stock_renderer, fast_renderer):
+        """Auto-compiled input respects SafeString (no double-escaping)."""
+        tpl = fast_renderer.engine.get_template("django/forms/widgets/input.html").template
+        ops = try_compile_widget_template(tpl)
+
+        w = forms.TextInput()
+        ctx = w.get_context("f", SafeString("<b>bold</b>"), {"id": "id_f"})
+        assert exec_compiled_template(ops, ctx) == stock_renderer.render(w.template_name, ctx).strip()
+
+    def test_textarea_matches_stock(self, stock_renderer, fast_renderer):
+        """Auto-compiled textarea.html matches stock output."""
+        tpl = fast_renderer.engine.get_template("django/forms/widgets/textarea.html").template
+        ops = try_compile_widget_template(tpl)
+
+        w = forms.Textarea(attrs={"rows": 3})
+        ctx = w.get_context("notes", "some text", {"id": "id_notes"})
+        assert exec_compiled_template(ops, ctx) == stock_renderer.render(w.template_name, ctx).strip()
+
+    def test_textarea_empty_value(self, stock_renderer, fast_renderer):
+        """Auto-compiled textarea with None value."""
+        tpl = fast_renderer.engine.get_template("django/forms/widgets/textarea.html").template
+        ops = try_compile_widget_template(tpl)
+
+        w = forms.Textarea()
+        ctx = w.get_context("notes", None, {"id": "id_notes"})
+        assert exec_compiled_template(ops, ctx) == stock_renderer.render(w.template_name, ctx).strip()
+
+    def test_checkbox_checked(self, stock_renderer, fast_renderer):
+        """Auto-compiled checkbox input with checked attr."""
+        tpl = fast_renderer.engine.get_template("django/forms/widgets/input.html").template
+        ops = try_compile_widget_template(tpl)
+
+        w = forms.CheckboxInput()
+        ctx = w.get_context("cb", True, {"id": "id_cb"})
+        result = exec_compiled_template(ops, ctx)
+        assert result == stock_renderer.render("django/forms/widgets/input.html", ctx).strip()
+
+    def test_no_widget_in_context_returns_none(self, fast_renderer):
+        """exec_compiled_template returns None if context has no widget key."""
+        tpl = fast_renderer.engine.get_template("django/forms/widgets/input.html").template
+        ops = try_compile_widget_template(tpl)
+        assert exec_compiled_template(ops, {"foo": "bar"}) is None
+
+
+class TestAutoCompilationIntegration:
+    """Test auto-compilation through CythonizedFormRenderer.render()."""
+
+    def test_autocompile_path_used_for_overridden_stock(self, stock_renderer, fast_renderer):
+        """When hardcoded path is disabled, auto-compilation kicks in."""
+        tpl_name = "django/forms/widgets/text.html"
+
+        # Disable the hardcoded fast path.
+        _backend._fast_path_ok[tpl_name] = False
+        # Clear any previous compilation.
+        _backend._compiled_templates.pop(tpl_name, None)
+
+        try:
+            w = forms.TextInput()
+            ctx = w.get_context("field", "hello", {"id": "id_field"})
+            fast = fast_renderer.render(tpl_name, ctx)
+            stock = stock_renderer.render(tpl_name, ctx).strip()
+            assert fast == stock
+
+            # The template should now be in the compiled cache.
+            assert tpl_name in _backend._compiled_templates
+            assert isinstance(_backend._compiled_templates[tpl_name], tuple)
+        finally:
+            _backend._fast_path_ok.pop(tpl_name, None)
+            _backend._compiled_templates.pop(tpl_name, None)
+
+    def test_compiled_cache_hit(self, stock_renderer, fast_renderer):
+        """Second render uses cached compiled ops."""
+        tpl_name = "django/forms/widgets/text.html"
+        _backend._fast_path_ok[tpl_name] = False
+        _backend._compiled_templates.pop(tpl_name, None)
+
+        try:
+            w = forms.TextInput()
+            ctx = w.get_context("f", "v1", {"id": "id_f"})
+            fast_renderer.render(tpl_name, ctx)  # First render: compiles.
+
+            ctx2 = w.get_context("f", "v2", {"id": "id_f"})
+            fast = fast_renderer.render(tpl_name, ctx2)  # Second render: cached.
+            stock = stock_renderer.render(tpl_name, ctx2).strip()
+            assert fast == stock
+        finally:
+            _backend._fast_path_ok.pop(tpl_name, None)
+            _backend._compiled_templates.pop(tpl_name, None)
+
+    def test_non_compilable_falls_through(self, fast_renderer):
+        """Non-compilable templates fall through to template rendering."""
+        tpl_name = "django/forms/widgets/select.html"
+        _backend._fast_path_ok[tpl_name] = False
+        _backend._compiled_templates.pop(tpl_name, None)
+
+        try:
+            w = forms.Select(choices=[("a", "A"), ("b", "B")])
+            ctx = w.get_context("f", "a", {"id": "id_f"})
+            result = fast_renderer.render(tpl_name, ctx)
+            assert "<select" in result
+            assert "<option" in result
+
+            # Cached as not-compilable.
+            assert _backend._compiled_templates[tpl_name] is False
+        finally:
+            _backend._fast_path_ok.pop(tpl_name, None)
+            _backend._compiled_templates.pop(tpl_name, None)

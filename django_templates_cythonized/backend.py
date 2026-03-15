@@ -10,7 +10,12 @@ from django.template.backends.django import DjangoTemplates, reraise
 
 from .context import Context, make_context
 from .engine import Engine
-from .forms import is_fast_widget_template, render_widget_fast
+from .forms import (
+    exec_compiled_template,
+    is_fast_widget_template,
+    render_widget_fast,
+    try_compile_widget_template,
+)
 
 _form_ctx_local = threading.local()
 
@@ -21,6 +26,10 @@ _STOCK_FORMS_TPL_DIR = str(Path(django.forms.__file__).parent / "templates")
 # Cache: template_name -> True (fast path ok) / False (not in set or overridden).
 # Populated lazily on first encounter of each template_name.
 _fast_path_ok: dict = {}
+
+# Cache: template_name -> compiled ops tuple, or False (not compilable).
+# Populated lazily on first encounter of each non-fast-path template.
+_compiled_templates: dict = {}
 
 
 class CythonizedTemplates(DjangoTemplates):
@@ -98,7 +107,7 @@ class CythonizedFormRenderer(EngineMixin, BaseRenderer):
             return False
 
     def render(self, template_name, context, request=None):
-        # Fast path: direct HTML generation for known stock widget templates.
+        # Fast path 1: hardcoded cfunc renderers for known stock widget templates.
         # Skipped if a project has overridden the template (different origin).
         ok = _fast_path_ok.get(template_name)
         if ok is None:
@@ -109,7 +118,27 @@ class CythonizedFormRenderer(EngineMixin, BaseRenderer):
             if result is not None:
                 return result
 
-        # Fallback: template-based rendering for unknown/overridden templates.
+        # Fast path 2: auto-compiled templates for custom/unknown widgets.
+        compiled = _compiled_templates.get(template_name)
+        if compiled is False:
+            pass  # Not compilable, fall through to template rendering.
+        elif compiled is not None:
+            result = exec_compiled_template(compiled, context)
+            if result is not None:
+                return result
+        else:
+            # First encounter: try to compile.
+            tpl_obj = self.get_template(template_name).template
+            compiled = try_compile_widget_template(tpl_obj)
+            if compiled is not None:
+                _compiled_templates[template_name] = compiled
+                result = exec_compiled_template(compiled, context)
+                if result is not None:
+                    return result
+            else:
+                _compiled_templates[template_name] = False
+
+        # Fallback: template-based rendering for complex/unsupported templates.
         tpl = self.get_template(template_name).template
 
         ctx = getattr(_form_ctx_local, "ctx", None)
