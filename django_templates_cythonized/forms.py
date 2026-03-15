@@ -173,6 +173,12 @@ def _render_select(widget: dict) -> str:
 
 
 @cython.ccall
+def is_fast_widget_template(template_name: str) -> cython.bint:
+    """Check if template_name is in the fast-path set."""
+    return template_name in _INPUT_TEMPLATES or template_name == _TEXTAREA_TEMPLATE or template_name == _SELECT_TEMPLATE
+
+
+@cython.ccall
 def render_widget_fast(template_name: str, context: dict):
     """
     Attempt fast-path HTML generation for known widget templates.

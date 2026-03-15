@@ -9,6 +9,7 @@ from django import forms
 from django.forms.renderers import DjangoTemplates
 from django.utils.safestring import SafeString
 
+from django_templates_cythonized import backend as _backend
 from django_templates_cythonized.backend import CythonizedFormRenderer
 
 
@@ -415,3 +416,31 @@ class TestFullFormIntegration:
             assert fast_html == stock_html, (
                 f"Field '{field_name}' (bound) mismatch:\n  stock: {stock_html!r}\n  fast:  {fast_html!r}"
             )
+
+
+# --- Template override guard ---
+
+
+class TestTemplateOverrideGuard:
+    """Verify fast path is skipped when a template origin is non-stock."""
+
+    def test_overridden_template_falls_back(self, fast_renderer):
+        """Simulate a non-stock origin by poisoning the cache, then verify
+        the renderer falls back to template-based rendering."""
+        tpl_name = "django/forms/widgets/text.html"
+
+        # Clear any cached result for this template.
+        _backend._fast_path_ok.pop(tpl_name, None)
+
+        # Force the cache entry to False (simulates detected override).
+        _backend._fast_path_ok[tpl_name] = False
+
+        # Render: should fall back to template engine, still producing valid HTML.
+        w = forms.TextInput()
+        ctx = w.get_context("field", "hello", {"id": "id_field"})
+        result = fast_renderer.render(tpl_name, ctx)
+        assert 'name="field"' in result
+        assert 'value="hello"' in result
+
+        # Restore: clear the poisoned entry so other tests aren't affected.
+        _backend._fast_path_ok.pop(tpl_name, None)
