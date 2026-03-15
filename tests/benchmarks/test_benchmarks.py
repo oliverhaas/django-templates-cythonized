@@ -16,17 +16,23 @@ class BookOrderForm(forms.Form):
         widget=forms.Textarea(attrs={"rows": 3, "placeholder": "Special instructions"}),
     )
     gift_wrap = forms.BooleanField(required=False)
-    shipping = forms.ChoiceField(choices=[
-        ("standard", "Standard"),
-        ("express", "Express"),
-        ("overnight", "Overnight"),
-    ])
+    shipping = forms.ChoiceField(
+        choices=[
+            ("standard", "Standard"),
+            ("express", "Express"),
+            ("overnight", "Overnight"),
+        ]
+    )
 
 
 GENRES = ["fiction", "non-fiction", "science", "history", "biography"]
 AUTHORS = [
-    "Alice Smith", "Bob Jones", "Carol White",
-    "David Brown", "Eve Davis", "Frank Miller",
+    "Alice Smith",
+    "Bob Jones",
+    "Carol White",
+    "David Brown",
+    "Eve Davis",
+    "Frank Miller",
 ]
 
 
@@ -47,7 +53,9 @@ def _make_books(n, with_forms=False, form_renderer=None):
         if with_forms:
             kwargs = {"renderer": form_renderer} if form_renderer else {}
             book["order_form"] = BookOrderForm(
-                initial={"quantity": 1}, prefix=f"book_{i + 1}", **kwargs,
+                initial={"quantity": 1},
+                prefix=f"book_{i + 1}",
+                **kwargs,
             )
         books.append(book)
     return books
@@ -55,7 +63,7 @@ def _make_books(n, with_forms=False, form_renderer=None):
 
 # Template WITHOUT form widgets — pure template engine workload.
 BOOKS_TEMPLATE = (
-    '<h1>{{ site_name }} — Book Catalog</h1>'
+    "<h1>{{ site_name }} — Book Catalog</h1>"
     '<table class="catalog">'
     "<thead><tr>"
     "<th>#</th><th>Title</th><th>Author</th><th>Year</th>"
@@ -63,7 +71,7 @@ BOOKS_TEMPLATE = (
     "</tr></thead>"
     "<tbody>"
     "{% for book in books %}"
-    '<tr class="{% cycle \'odd\' \'even\' %}">'
+    "<tr class=\"{% cycle 'odd' 'even' %}\">"
     "<td>{{ forloop.counter }}</td>"
     "<td>{{ book.title }}</td>"
     "<td>{{ book.author }}</td>"
@@ -93,7 +101,7 @@ BOOKS_TEMPLATE = (
 # Each book carries its own order_form (accessed via book.order_form),
 # so form widgets are rendered per-row, not cached as constants.
 BOOKS_WITH_FORMS_TEMPLATE = (
-    '<h1>{{ site_name }} — Book Catalog</h1>'
+    "<h1>{{ site_name }} — Book Catalog</h1>"
     '<table class="catalog">'
     "<thead><tr>"
     "<th>#</th><th>Title</th><th>Author</th><th>Year</th>"
@@ -101,7 +109,7 @@ BOOKS_WITH_FORMS_TEMPLATE = (
     "</tr></thead>"
     "<tbody>"
     "{% for book in books %}"
-    '<tr class="{% cycle \'odd\' \'even\' %}">'
+    "<tr class=\"{% cycle 'odd' 'even' %}\">"
     "<td>{{ forloop.counter }}</td>"
     "<td>{{ book.title }}</td>"
     "<td>{{ book.author }}</td>"

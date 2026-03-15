@@ -41,9 +41,7 @@ class Engine:
             loaders = [("django_templates_cythonized.loaders.cached.Loader", loaders)]
         else:
             if app_dirs:
-                raise ImproperlyConfigured(
-                    "app_dirs must not be set when loaders is defined."
-                )
+                raise ImproperlyConfigured("app_dirs must not be set when loaders is defined.")
         if libraries is None:
             libraries = {}
         if builtins is None:
@@ -64,18 +62,11 @@ class Engine:
         self._template_cache = {}
 
     def __repr__(self):
-        return (
-            "<%s:%s app_dirs=%s%s debug=%s loaders=%s string_if_invalid=%s "
-            "file_charset=%s%s%s autoescape=%s>"
-        ) % (
+        return ("<%s:%s app_dirs=%s%s debug=%s loaders=%s string_if_invalid=%s file_charset=%s%s%s autoescape=%s>") % (
             self.__class__.__qualname__,
             "" if not self.dirs else " dirs=%s" % repr(self.dirs),
             self.app_dirs,
-            (
-                ""
-                if not self.context_processors
-                else " context_processors=%s" % repr(self.context_processors)
-            ),
+            ("" if not self.context_processors else " context_processors=%s" % repr(self.context_processors)),
             self.debug,
             repr(self.loaders),
             repr(self.string_if_invalid),
@@ -149,9 +140,7 @@ class Engine:
             loader_class = import_string(loader)
             return loader_class(self, *args)
         else:
-            raise ImproperlyConfigured(
-                "Invalid value in template loaders configuration: %r" % loader
-            )
+            raise ImproperlyConfigured("Invalid value in template loaders configuration: %r" % loader)
 
     def find_template(self, name, dirs=None, skip=None):
         tried = []

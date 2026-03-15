@@ -56,9 +56,7 @@ class Loader(BaseLoader):
         try:
             template = super().get_template(template_name, skip)
         except TemplateDoesNotExist as e:
-            self.get_template_cache[key] = (
-                copy_exception(e) if self.engine.debug else TemplateDoesNotExist
-            )
+            self.get_template_cache[key] = copy_exception(e) if self.engine.debug else TemplateDoesNotExist
             raise
         else:
             self.get_template_cache[key] = template
@@ -84,9 +82,7 @@ class Loader(BaseLoader):
         skip_prefix = ""
 
         if skip:
-            matching = [
-                origin.name for origin in skip if origin.template_name == template_name
-            ]
+            matching = [origin.name for origin in skip if origin.template_name == template_name]
             if matching:
                 skip_prefix = self.generate_hash(matching)
 

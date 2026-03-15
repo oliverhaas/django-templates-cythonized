@@ -400,9 +400,7 @@ def urlizetrunc(value, limit, autoescape=True):
 
     Argument: Length to truncate URLs to.
     """
-    return mark_safe(
-        _urlize(value, trim_url_limit=int(limit), nofollow=True, autoescape=autoescape)
-    )
+    return mark_safe(_urlize(value, trim_url_limit=int(limit), nofollow=True, autoescape=autoescape))
 
 
 @register.filter(is_safe=False)

@@ -6,7 +6,6 @@ provides a fast mark_safe() without @keep_lazy overhead.
 """
 
 import cython
-
 from django.utils.safestring import SafeData, SafeString
 
 __all__ = ["SafeData", "SafeString", "mark_safe"]

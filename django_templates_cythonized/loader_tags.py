@@ -17,7 +17,7 @@ BLOCK_CONTEXT_KEY = "block_context"
 
 @cython.cclass
 class BlockContext:
-    blocks = cython.declare(object, visibility='public')
+    blocks = cython.declare(object, visibility="public")
 
     def __init__(self):
         # Dictionary of FIFO queues.
@@ -52,10 +52,10 @@ class BlockContext:
 
 @cython.cclass
 class BlockNode(Node):
-    name = cython.declare(object, visibility='public')
-    nodelist = cython.declare(object, visibility='public')
-    parent = cython.declare(object, visibility='public')
-    context = cython.declare(object, visibility='public')
+    name = cython.declare(object, visibility="public")
+    nodelist = cython.declare(object, visibility="public")
+    parent = cython.declare(object, visibility="public")
+    context = cython.declare(object, visibility="public")
 
     def __init__(self, name, nodelist, parent=None):
         self.name = name
@@ -94,20 +94,17 @@ class BlockNode(Node):
                 "{{ block.super }} in a base template?" % self.__class__.__name__
             )
         render_context = self.context.render_context
-        if (
-            BLOCK_CONTEXT_KEY in render_context
-            and render_context[BLOCK_CONTEXT_KEY].get_block(self.name) is not None
-        ):
+        if BLOCK_CONTEXT_KEY in render_context and render_context[BLOCK_CONTEXT_KEY].get_block(self.name) is not None:
             return mark_safe(self.render(self.context))
         return ""
 
 
 @cython.cclass
 class ExtendsNode(Node):
-    nodelist = cython.declare(object, visibility='public')
-    parent_name = cython.declare(object, visibility='public')
-    template_dirs = cython.declare(object, visibility='public')
-    blocks = cython.declare(dict, visibility='public')
+    nodelist = cython.declare(object, visibility="public")
+    parent_name = cython.declare(object, visibility="public")
+    template_dirs = cython.declare(object, visibility="public")
+    blocks = cython.declare(dict, visibility="public")
     must_be_first = True
     context_key = "extends_context"
 
@@ -145,9 +142,7 @@ class ExtendsNode(Node):
         if not parent:
             error_msg = "Invalid template name in 'extends' tag: %r." % parent
             if self.parent_name.filters or isinstance(self.parent_name.var, Variable):
-                error_msg += (
-                    " Got this from the '%s' variable." % self.parent_name.token
-                )
+                error_msg += " Got this from the '%s' variable." % self.parent_name.token
             raise TemplateSyntaxError(error_msg)
         if isinstance(parent, Template):
             # parent is a django.template.Template
@@ -174,10 +169,7 @@ class ExtendsNode(Node):
             # The ExtendsNode has to be the first non-text node.
             if not isinstance(node, TextNode):
                 if not isinstance(node, ExtendsNode):
-                    blocks = {
-                        n.name: n
-                        for n in compiled_parent.nodelist.get_nodes_by_type(BlockNode)
-                    }
+                    blocks = {n.name: n for n in compiled_parent.nodelist.get_nodes_by_type(BlockNode)}
                     block_context.add_blocks(blocks)
                 break
 
@@ -196,14 +188,12 @@ class ExtendsNode(Node):
 
 @cython.cclass
 class IncludeNode(Node):
-    template = cython.declare(object, visibility='public')
-    extra_context = cython.declare(dict, visibility='public')
-    isolated_context = cython.declare(cython.bint, visibility='public')
+    template = cython.declare(object, visibility="public")
+    extra_context = cython.declare(dict, visibility="public")
+    isolated_context = cython.declare(cython.bint, visibility="public")
     context_key = "__include_context"
 
-    def __init__(
-        self, template, *args, extra_context=None, isolated_context=False, **kwargs
-    ):
+    def __init__(self, template, *args, extra_context=None, isolated_context=False, **kwargs):
         self.template = template
         self.extra_context = extra_context or {}
         self.isolated_context = isolated_context
@@ -236,9 +226,7 @@ class IncludeNode(Node):
                     cache = context.render_context.dicts[0].setdefault(self, {})
                     template = cache.get(template_name)
                     if template is None:
-                        template = context.template.engine.select_template(
-                            template_name
-                        )
+                        template = context.template.engine.select_template(template_name)
                         cache[template_name] = template
             else:
                 # List/tuple of template names — use render_context cache
@@ -246,19 +234,14 @@ class IncludeNode(Node):
                 cache = context.render_context.dicts[0].setdefault(self, {})
                 template = cache.get(template_name)
                 if template is None:
-                    template = context.template.engine.select_template(
-                        template_name
-                    )
+                    template = context.template.engine.select_template(template_name)
                     cache[template_name] = template
         # Use the base.Template of a backends.django.Template.
         elif hasattr(template, "template"):
             template = template.template
         extra_context = self.extra_context
         if extra_context:
-            values = {
-                name: var.resolve(context)
-                for name, var in extra_context.items()
-            }
+            values = {name: var.resolve(context) for name, var in extra_context.items()}
             if self.isolated_context:
                 return template.render(context.new(values))
             # Inline push/pop: plain dict avoids ContextDict + context manager
@@ -289,9 +272,7 @@ def do_block(parser, token):
     # check for duplication.
     try:
         if block_name in parser.__loaded_blocks:
-            raise TemplateSyntaxError(
-                "'%s' tag with name '%s' appears more than once" % (bits[0], block_name)
-            )
+            raise TemplateSyntaxError("'%s' tag with name '%s' appears more than once" % (bits[0], block_name))
         parser.__loaded_blocks.append(block_name)
     except AttributeError:  # parser.__loaded_blocks isn't a list yet
         parser.__loaded_blocks = [block_name]
@@ -324,8 +305,7 @@ def construct_relative_path(
     if current_template_name is None:
         # Unknown origin (e.g. Template('...').render(Context({...})).
         raise TemplateSyntaxError(
-            f"The relative path {relative_name} cannot be evaluated due to "
-            "an unknown template origin."
+            f"The relative path {relative_name} cannot be evaluated due to an unknown template origin."
         )
 
     new_name = posixpath.normpath(
@@ -342,12 +322,9 @@ def construct_relative_path(
     if not allow_recursion and current_template_name.lstrip("/") == new_name:
         raise TemplateSyntaxError(
             "The relative path '%s' was translated to template name '%s', the "
-            "same template in which the tag appears."
-            % (relative_name, current_template_name)
+            "same template in which the tag appears." % (relative_name, current_template_name)
         )
-    has_quotes = (
-        relative_name.startswith(('"', "'")) and relative_name[0] == relative_name[-1]
-    )
+    has_quotes = relative_name.startswith(('"', "'")) and relative_name[0] == relative_name[-1]
     return f'"{new_name}"' if has_quotes else new_name
 
 
@@ -369,9 +346,7 @@ def do_extends(parser, token):
     parent_name = parser.compile_filter(bits[1])
     nodelist = parser.parse()
     if nodelist.get_nodes_by_type(ExtendsNode):
-        raise TemplateSyntaxError(
-            "'%s' cannot appear more than once in the same template" % bits[0]
-        )
+        raise TemplateSyntaxError("'%s' cannot appear more than once in the same template" % bits[0])
     return ExtendsNode(nodelist, parent_name)
 
 
@@ -395,29 +370,22 @@ def do_include(parser, token):
     bits = token.split_contents()
     if len(bits) < 2:
         raise TemplateSyntaxError(
-            "%r tag takes at least one argument: the name of the template to "
-            "be included." % bits[0]
+            "%r tag takes at least one argument: the name of the template to be included." % bits[0]
         )
     options = {}
     remaining_bits = bits[2:]
     while remaining_bits:
         option = remaining_bits.pop(0)
         if option in options:
-            raise TemplateSyntaxError(
-                "The %r option was specified more than once." % option
-            )
+            raise TemplateSyntaxError("The %r option was specified more than once." % option)
         if option == "with":
             value = token_kwargs(remaining_bits, parser, support_legacy=False)
             if not value:
-                raise TemplateSyntaxError(
-                    '"with" in %r tag needs at least one keyword argument.' % bits[0]
-                )
+                raise TemplateSyntaxError('"with" in %r tag needs at least one keyword argument.' % bits[0])
         elif option == "only":
             value = True
         else:
-            raise TemplateSyntaxError(
-                "Unknown argument for %r tag: %r." % (bits[0], option)
-            )
+            raise TemplateSyntaxError("Unknown argument for %r tag: %r." % (bits[0], option))
         options[option] = value
     isolated_context = options.get("only", False)
     namemap = options.get("with", {})

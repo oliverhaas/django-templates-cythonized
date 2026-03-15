@@ -4,9 +4,9 @@ Cython-accelerated timezone utilities for the template engine.
 Provides a fast template_localtime() with inlined is_naive check.
 """
 
-import cython
 from datetime import datetime
 
+import cython
 from django.conf import settings
 from django.utils.timezone import localtime
 

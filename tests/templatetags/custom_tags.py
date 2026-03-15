@@ -1,7 +1,6 @@
 """Custom template tags for testing — simulates what a real user would write."""
 
 from django import template
-from django.utils.html import format_html
 
 register = template.Library()
 

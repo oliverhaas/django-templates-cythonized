@@ -34,6 +34,7 @@ class ContextPopException(Exception):
 class ContextDict(dict):
     """Legacy ContextDict — kept for backwards compatibility but no longer used
     internally. Our push() now uses plain dicts + _PushPopCtx."""
+
     def __init__(self, context, *args, **kwargs):
         super().__init__(*args, **kwargs)
         context.dicts.append(self)
@@ -51,6 +52,7 @@ class _PushPopCtx:
     """Lightweight C-level context manager for push/pop.
     Unlike ContextDict, this doesn't subclass dict — the pushed dict
     is a plain dict, enabling d: dict typing in hot loops."""
+
     cython.declare(_dicts=list)
 
     def __init__(self, dicts: list):
@@ -335,10 +337,7 @@ class RequestContext(Context):
             try:
                 updates.update(context)
             except TypeError as e:
-                raise TypeError(
-                    f"Context processor {processor.__qualname__} didn't return a "
-                    "dictionary."
-                ) from e
+                raise TypeError(f"Context processor {processor.__qualname__} didn't return a dictionary.") from e
 
         self.dicts[self._processors_index] = updates
 
@@ -363,9 +362,7 @@ def make_context(context, request=None, **kwargs):
     Create a suitable Context from a plain dict and optionally an HttpRequest.
     """
     if context is not None and not isinstance(context, dict):
-        raise TypeError(
-            "context must be a dict rather than %s." % context.__class__.__name__
-        )
+        raise TypeError("context must be a dict rather than %s." % context.__class__.__name__)
     if request is None:
         context = Context(context, **kwargs)
     else:

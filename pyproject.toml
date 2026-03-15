@@ -80,30 +80,34 @@ suppress-none-returning = true
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = [
-  "ANN",    # Type annotations not required in tests
-  "ARG",    # Unused arguments common in fixtures
-  "F841",   # Unused variables okay in tests
-  "FBT",    # Boolean args fine in test fixtures and test calls
-  "PT006",  # Parametrize tuple style is preference
-  "PT011",  # Broad pytest.raises okay in some tests
-  "PT013",  # pytest import style is preference
-  "PT018",  # Compound assertions okay in tests
-  "S101",   # assert in tests
-  "S105",   # Hardcoded passwords in test settings
+  "ANN",     # Type annotations not required in tests
+  "ARG",     # Unused arguments common in fixtures
+  "B905",    # zip strict not needed in tests
+  "C901",    # Complex functions okay in test helpers
+  "DTZ001",  # Naive datetimes fine in tests
+  "E402",    # Late imports for Django setup in conftest
+  "F811",    # Redefined names from fixture reuse patterns
+  "F841",    # Unused variables okay in tests
+  "FBT",     # Boolean args fine in test fixtures and test calls
+  "N818",    # Exception naming conventions relaxed
+  "PERF401", # Manual list comprehension okay in tests
+  "PLC0415", # Late imports for Django setup
+  "PLR0912", # Too many branches in test helpers
+  "PLR0911", # Too many return statements in test helpers
+  "PLR1714", # Repeated equality comparisons okay
+  "PT006",   # Parametrize tuple style is preference
+  "PT009",   # pytest-style assertions not enforced
+  "PT011",   # Broad pytest.raises okay in some tests
+  "PT013",   # pytest import style is preference
+  "PT018",   # Compound assertions okay in tests
+  "PTH",     # pathlib not required in tests
+  "S101",    # assert in tests
+  "S105",    # Hardcoded passwords in test settings
+  "S106",    # Hardcoded passwords in test settings
+  "SIM102",  # Collapsible if okay in tests
 ]
 # Django source code - be lenient with linting for now
-"django_templates_cythonized/base.py" = ["ALL"]
-"django_templates_cythonized/context.py" = ["ALL"]
-"django_templates_cythonized/defaulttags.py" = ["ALL"]
-"django_templates_cythonized/defaultfilters.py" = ["ALL"]
-"django_templates_cythonized/loader_tags.py" = ["ALL"]
-"django_templates_cythonized/smartif.py" = ["ALL"]
-"django_templates_cythonized/library.py" = ["ALL"]
-"django_templates_cythonized/engine.py" = ["ALL"]
-"django_templates_cythonized/exceptions.py" = ["ALL"]
-"django_templates_cythonized/utils.py" = ["ALL"]
-"django_templates_cythonized/autoreload.py" = ["ALL"]
-"django_templates_cythonized/response.py" = ["ALL"]
+"django_templates_cythonized/*.py" = ["ALL"]
 "django_templates_cythonized/loaders/*.py" = ["ALL"]
 
 [tool.mypy]

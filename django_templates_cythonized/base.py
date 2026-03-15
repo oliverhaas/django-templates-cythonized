@@ -60,6 +60,7 @@ from datetime import datetime as _datetime_type
 from django.template.base import TokenType
 
 from .context import BaseContext
+
 # C-level cimports: in compiled mode, these use cpdef fast path (C-level call);
 # in pure Python mode, they fall back to regular imports automatically.
 from cython.cimports.django_templates_cythonized.context import Context
@@ -123,11 +124,7 @@ class Origin:
         return "<%s name=%r>" % (self.__class__.__qualname__, self.name)
 
     def __eq__(self, other):
-        return (
-            isinstance(other, Origin)
-            and self.name == other.name
-            and self.loader == other.loader
-        )
+        return isinstance(other, Origin) and self.name == other.name and self.loader == other.loader
 
     @property
     def loader_name(self):
@@ -176,15 +173,11 @@ def _flatten_includes(nodelist, engine, seen):
                 and not fe.filters
             ):
                 tpl_name = fe.var
-                if (
-                    not tpl_name.startswith(("./", "../"))
-                    and tpl_name not in seen
-                    and tpl_name not in flattened_here
-                ):
+                if not tpl_name.startswith(("./", "../")) and tpl_name not in seen and tpl_name not in flattened_here:
                     try:
                         included_tpl = engine.get_template(tpl_name)
                         # Unwrap backend _Template wrapper if needed
-                        if hasattr(included_tpl, 'template'):
+                        if hasattr(included_tpl, "template"):
                             included_tpl = included_tpl.template
                         included_nodes: list = included_tpl.nodelist._nodes
                         # Splice included nodes in place of the IncludeNode
@@ -194,7 +187,7 @@ def _flatten_includes(nodelist, engine, seen):
                         _flatten_includes(included_tpl.nodelist, engine, seen)
                         # Splice included nodes into parent
                         n_included = len(included_nodes)
-                        nodes[i:i+1] = included_nodes
+                        nodes[i : i + 1] = included_nodes
                         seen.discard(tpl_name)
                         changed = True
                         i += n_included
@@ -202,15 +195,15 @@ def _flatten_includes(nodelist, engine, seen):
                     except (TemplateDoesNotExist, AttributeError):
                         pass  # If loading fails, keep the IncludeNode as-is
         # Recurse into child nodelists of this node
-        if hasattr(node, 'child_nodelists'):
+        if hasattr(node, "child_nodelists"):
             for attr in node.child_nodelists:
                 child_nl = getattr(node, attr, None)
-                if child_nl is not None and hasattr(child_nl, '_nodes'):
+                if child_nl is not None and hasattr(child_nl, "_nodes"):
                     _flatten_includes(child_nl, engine, seen)
         # Special case: IfNode stores nodelists in conditions_nodelists
-        if hasattr(node, 'conditions_nodelists'):
+        if hasattr(node, "conditions_nodelists"):
             for _cond, child_nl in node.conditions_nodelists:
-                if child_nl is not None and hasattr(child_nl, '_nodes'):
+                if child_nl is not None and hasattr(child_nl, "_nodes"):
                     _flatten_includes(child_nl, engine, seen)
         i += 1
     if changed:
@@ -220,7 +213,6 @@ def _flatten_includes(nodelist, engine, seen):
 
 @cython.cclass
 class Template:
-
     def __init__(self, template_string, origin=None, name=None, engine=None):
         # If Template is instantiated directly rather than from an Engine and
         # exactly one Django template engine is configured, use that engine.
@@ -253,14 +245,12 @@ class Template:
         "Display stage -- can be called many times"
         if not isinstance(context, Context):
             # Accept Django's stock Context or dict-like objects for compatibility.
-            if hasattr(context, 'flatten'):
+            if hasattr(context, "flatten"):
                 context = Context(context.flatten())
             elif isinstance(context, dict):
                 context = Context(context)
             else:
-                raise TypeError(
-                    "context must be a Context or dict, got %s" % type(context).__name__
-                )
+                raise TypeError("context must be a Context or dict, got %s" % type(context).__name__)
         # Inline push_state(self) — avoids contextlib generator + ContextDict overhead.
         rc = context.render_context
         _rc_initial = rc.template
@@ -271,7 +261,7 @@ class Template:
                 context.template_name = self.name
                 # RequestContext needs context processor setup via its
                 # overridden bind_template; plain Context just sets .template.
-                if hasattr(context, '_processors_index'):
+                if hasattr(context, "_processors_index"):
                     with context.bind_template(self):
                         return self._render(context)
                 else:
@@ -316,11 +306,7 @@ class Template:
         except Exception as e:
             if self.engine.debug:
                 e.template_debug = self.get_exception_info(e, e.token)
-            if (
-                isinstance(e, TemplateSyntaxError)
-                and self.origin.name != UNKNOWN_SOURCE
-                and e.args
-            ):
+            if isinstance(e, TemplateSyntaxError) and self.origin.name != UNKNOWN_SOURCE and e.args:
                 raw_message = e.args[0]
                 e.raw_error_message = raw_message
                 e.args = (f"Template: {self.origin.name}, {raw_message}", *e.args[1:])
@@ -413,11 +399,11 @@ class PartialTemplate:
     Wraps nodelist as a partial, in order to be able to bind context.
     """
 
-    nodelist = cython.declare(object, visibility='public')
-    origin = cython.declare(object, visibility='public')
-    name = cython.declare(object, visibility='public')
-    _source_start = cython.declare(object, visibility='public')
-    _source_end = cython.declare(object, visibility='public')
+    nodelist = cython.declare(object, visibility="public")
+    origin = cython.declare(object, visibility="public")
+    name = cython.declare(object, visibility="public")
+    _source_start = cython.declare(object, visibility="public")
+    _source_end = cython.declare(object, visibility="public")
 
     def __init__(self, nodelist, origin, name, source_start=None, source_end=None):
         self.nodelist = nodelist
@@ -449,8 +435,7 @@ class PartialTemplate:
         template = self.origin.loader.get_template(self.origin.template_name)
         if not template.engine.debug:
             warnings.warn(
-                "PartialTemplate.source is only available when template "
-                "debugging is enabled.",
+                "PartialTemplate.source is only available when template debugging is enabled.",
                 RuntimeWarning,
                 skip_file_prefixes=django_file_prefixes(),
             )
@@ -470,7 +455,7 @@ class PartialTemplate:
         try:
             if context.template is None:
                 context.template_name = self.name
-                if hasattr(context, '_processors_index'):
+                if hasattr(context, "_processors_index"):
                     with context.bind_template(self):
                         return self._render(context)
                 else:
@@ -687,9 +672,7 @@ class Parser:
                 self.extend_nodelist(nodelist, TextNode(token.contents), token)
             elif token_type == 1:  # TokenType.VAR
                 if not token.contents:
-                    raise self.error(
-                        token, "Empty variable tag on line %d" % token.lineno
-                    )
+                    raise self.error(token, "Empty variable tag on line %d" % token.lineno)
                 try:
                     filter_expression = self.compile_filter(token.contents)
                 except TemplateSyntaxError as e:
@@ -904,8 +887,7 @@ class FilterExpression:
             start = match.start()
             if upto != start:
                 raise TemplateSyntaxError(
-                    "Could not parse some characters: "
-                    "%s|%s|%s" % (token[:upto], token[upto:start], token[start:])
+                    "Could not parse some characters: %s|%s|%s" % (token[:upto], token[upto:start], token[start:])
                 )
             if var_obj is None:
                 if constant := match["constant"]:
@@ -914,9 +896,7 @@ class FilterExpression:
                     except VariableDoesNotExist:
                         var_obj = None
                 elif (var := match["var"]) is None:
-                    raise TemplateSyntaxError(
-                        "Could not find variable at start of %s." % token
-                    )
+                    raise TemplateSyntaxError("Could not find variable at start of %s." % token)
                 else:
                     var_obj = Variable(var)
             else:
@@ -928,19 +908,18 @@ class FilterExpression:
                     args.append((True, Variable(var_arg)))
                 filter_func = parser.find_filter(filter_name)
                 self.args_check(filter_name, filter_func, args)
-                filters.append(CFilterInfo(
-                    filter_func,
-                    args,
-                    getattr(filter_func, "expects_localtime", False),
-                    getattr(filter_func, "needs_autoescape", False),
-                    getattr(filter_func, "is_safe", False),
-                ))
+                filters.append(
+                    CFilterInfo(
+                        filter_func,
+                        args,
+                        getattr(filter_func, "expects_localtime", False),
+                        getattr(filter_func, "needs_autoescape", False),
+                        getattr(filter_func, "is_safe", False),
+                    )
+                )
             upto = match.end()
         if upto != len(token):
-            raise TemplateSyntaxError(
-                "Could not parse the remainder: '%s' "
-                "from '%s'" % (token[upto:], token)
-            )
+            raise TemplateSyntaxError("Could not parse the remainder: '%s' from '%s'" % (token[upto:], token))
 
         self.filters = filters
         self.var = var_obj
@@ -951,10 +930,13 @@ class FilterExpression:
             if not fi.expects_localtime and not fi.needs_autoescape:
                 f_args = fi.args
                 if len(f_args) == 0:
-                    self._fast_filter = getattr(fi.func, '_cython_fast_code', 0)
-                elif (len(f_args) == 1 and not f_args[0][0]
-                      and f_args[0][1] == 's'
-                      and getattr(fi.func, '_cython_fast_code', 0) == FFILTER_STRINGFORMAT_S):
+                    self._fast_filter = getattr(fi.func, "_cython_fast_code", 0)
+                elif (
+                    len(f_args) == 1
+                    and not f_args[0][0]
+                    and f_args[0][1] == "s"
+                    and getattr(fi.func, "_cython_fast_code", 0) == FFILTER_STRINGFORMAT_S
+                ):
                     # stringformat:'s' — str(value)
                     self._fast_filter = FFILTER_STRINGFORMAT_S
 
@@ -1011,9 +993,7 @@ class FilterExpression:
         dlen = len(defaults or [])
         # Not enough OR Too many
         if plen < (alen - dlen) or plen > alen:
-            raise TemplateSyntaxError(
-                "%s requires %d arguments, %d provided" % (name, alen - dlen, plen)
-            )
+            raise TemplateSyntaxError("%s requires %d arguments, %d provided" % (name, alen - dlen, plen))
 
         return True
 
@@ -1044,11 +1024,11 @@ class Variable:
     (The example assumes VARIABLE_ATTRIBUTE_SEPARATOR is '.')
     """
 
-    var = cython.declare(object, visibility='public')
-    literal = cython.declare(object, visibility='public')
-    lookups = cython.declare(object, visibility='public')
-    translate = cython.declare(cython.bint, visibility='public')
-    message_context = cython.declare(object, visibility='public')
+    var = cython.declare(object, visibility="public")
+    literal = cython.declare(object, visibility="public")
+    lookups = cython.declare(object, visibility="public")
+    translate = cython.declare(cython.bint, visibility="public")
+    message_context = cython.declare(object, visibility="public")
 
     def __init__(self, var):
         self.var = var
@@ -1090,17 +1070,12 @@ class Variable:
                 # Otherwise we'll set self.lookups so that resolve() knows
                 # we're dealing with a bonafide variable
                 if VARIABLE_ATTRIBUTE_SEPARATOR + "_" in var or var[0] == "_":
-                    raise TemplateSyntaxError(
-                        "Variables and attributes may "
-                        "not begin with underscores: '%s'" % var
-                    )
+                    raise TemplateSyntaxError("Variables and attributes may not begin with underscores: '%s'" % var)
                 # Disallow characters that are allowed in numbers but not in a
                 # variable name.
                 for c in ["+", "-"]:
                     if c in var:
-                        raise TemplateSyntaxError(
-                            "Invalid character ('%s') in variable name: '%s'" % (c, var)
-                        )
+                        raise TemplateSyntaxError("Invalid character ('%s') in variable name: '%s'" % (c, var))
                 self.lookups = tuple(var.split(VARIABLE_ATTRIBUTE_SEPARATOR))
 
     @cython.ccall
@@ -1187,9 +1162,7 @@ class Variable:
                     try:  # attribute lookup
                         # Don't return class attributes if the class is the
                         # context:
-                        if isinstance(current, BaseContext) and getattr(
-                            type(current), bit
-                        ):
+                        if isinstance(current, BaseContext) and getattr(type(current), bit):
                             raise AttributeError
                         current = getattr(current, bit)
                     except (TypeError, AttributeError):
@@ -1283,11 +1256,9 @@ class Node:
                     not hasattr(e, "template_debug")
                     and context.render_context.template.origin == e._culprit_node.origin
                 ):
-                    e.template_debug = (
-                        context.render_context.template.get_exception_info(
-                            e,
-                            e._culprit_node.token,
-                        )
+                    e.template_debug = context.render_context.template.get_exception_info(
+                        e,
+                        e._culprit_node.token,
                     )
             raise
 
@@ -1463,6 +1434,7 @@ def render_value_in_context(value, context: Context):
     lang = context._lang
     if lang is None:
         from django.utils.translation import get_language
+
         lang = get_language()
         context._lang = lang
     value = localize(value, use_l10n=context.use_l10n, lang=lang)
@@ -1719,6 +1691,7 @@ def _render_var_fast(fe: FilterExpression, context: Context):
         lang = context._lang
         if lang is None:
             from django.utils.translation import get_language
+
             lang = get_language()
             context._lang = lang
         return localize(value, use_l10n=context.use_l10n, lang=lang)
@@ -1729,6 +1702,7 @@ def _render_var_fast(fe: FilterExpression, context: Context):
         lang = context._lang
         if lang is None:
             from django.utils.translation import get_language
+
             lang = get_language()
             context._lang = lang
         if _float_is_str_fast(lang):
@@ -1827,6 +1801,7 @@ def _render_var_with_value(fe: FilterExpression, value, context: Context):
         lang = context._lang
         if lang is None:
             from django.utils.translation import get_language
+
             lang = get_language()
             context._lang = lang
         return localize(value, use_l10n=context.use_l10n, lang=lang)
@@ -1837,6 +1812,7 @@ def _render_var_with_value(fe: FilterExpression, value, context: Context):
         lang = context._lang
         if lang is None:
             from django.utils.translation import get_language
+
             lang = get_language()
             context._lang = lang
         if _float_is_str_fast(lang):

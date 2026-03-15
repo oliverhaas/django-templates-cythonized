@@ -8,15 +8,18 @@ import pytest
 from django import forms
 from django.template import engines
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
 GENRES = ["fiction", "non-fiction", "science", "history", "biography"]
 AUTHORS = [
-    "Alice Smith", "Bob Jones", "Carol White",
-    "David Brown", "Eve Davis", "Frank Miller",
+    "Alice Smith",
+    "Bob Jones",
+    "Carol White",
+    "David Brown",
+    "Eve Davis",
+    "Frank Miller",
 ]
 
 
@@ -36,7 +39,8 @@ def _make_books(n, with_forms=False):
         }
         if with_forms:
             book["order_form"] = BookOrderForm(
-                initial={"quantity": 1}, prefix=f"book_{i + 1}",
+                initial={"quantity": 1},
+                prefix=f"book_{i + 1}",
             )
         books.append(book)
     return books
@@ -49,11 +53,13 @@ class BookOrderForm(forms.Form):
         widget=forms.Textarea(attrs={"rows": 3, "placeholder": "Special instructions"}),
     )
     gift_wrap = forms.BooleanField(required=False)
-    shipping = forms.ChoiceField(choices=[
-        ("standard", "Standard"),
-        ("express", "Express"),
-        ("overnight", "Overnight"),
-    ])
+    shipping = forms.ChoiceField(
+        choices=[
+            ("standard", "Standard"),
+            ("express", "Express"),
+            ("overnight", "Overnight"),
+        ]
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -61,7 +67,7 @@ class BookOrderForm(forms.Form):
 # ---------------------------------------------------------------------------
 
 BOOKS_TEMPLATE = (
-    '<h1>{{ site_name }} — Book Catalog</h1>'
+    "<h1>{{ site_name }} — Book Catalog</h1>"
     '<table class="catalog">'
     "<thead><tr>"
     "<th>#</th><th>Title</th><th>Author</th><th>Year</th>"
@@ -69,7 +75,7 @@ BOOKS_TEMPLATE = (
     "</tr></thead>"
     "<tbody>"
     "{% for book in books %}"
-    '<tr class="{% cycle \'odd\' \'even\' %}">'
+    "<tr class=\"{% cycle 'odd' 'even' %}\">"
     "<td>{{ forloop.counter }}</td>"
     "<td>{{ book.title }}</td>"
     "<td>{{ book.author }}</td>"
@@ -97,7 +103,7 @@ BOOKS_TEMPLATE = (
 
 # Each book carries its own order_form (per-row, not shared).
 BOOKS_WITH_FORMS_TEMPLATE = (
-    '<h1>{{ site_name }} — Book Catalog</h1>'
+    "<h1>{{ site_name }} — Book Catalog</h1>"
     '<table class="catalog">'
     "<thead><tr>"
     "<th>#</th><th>Title</th><th>Author</th><th>Year</th>"
@@ -105,7 +111,7 @@ BOOKS_WITH_FORMS_TEMPLATE = (
     "</tr></thead>"
     "<tbody>"
     "{% for book in books %}"
-    '<tr class="{% cycle \'odd\' \'even\' %}">'
+    "<tr class=\"{% cycle 'odd' 'even' %}\">"
     "<td>{{ forloop.counter }}</td>"
     "<td>{{ book.title }}</td>"
     "<td>{{ book.author }}</td>"
@@ -169,13 +175,7 @@ CYCLE_AS_TEMPLATE = (
 
 # Nested loops
 NESTED_LOOP_TEMPLATE = (
-    "{% for book in books %}"
-    "<div>{{ book.title }}:"
-    "{% for tag in book.tags %}"
-    " {{ tag }}"
-    "{% endfor %}"
-    "</div>"
-    "{% endfor %}"
+    "{% for book in books %}<div>{{ book.title }}:{% for tag in book.tags %} {{ tag }}{% endfor %}</div>{% endfor %}"
 )
 
 # forloop intrinsics
@@ -190,13 +190,7 @@ FORLOOP_TEMPLATE = (
 )
 
 # Empty loop with {% empty %}
-EMPTY_LOOP_TEMPLATE = (
-    "{% for book in books %}"
-    "{{ book.title }}"
-    "{% empty %}"
-    "No books found."
-    "{% endfor %}"
-)
+EMPTY_LOOP_TEMPLATE = "{% for book in books %}{{ book.title }}{% empty %}No books found.{% endfor %}"
 
 # Mixed filters
 FILTERS_TEMPLATE = (
@@ -209,18 +203,13 @@ FILTERS_TEMPLATE = (
 )
 
 # Constant if (condition doesn't depend on loop var)
-CONST_IF_TEMPLATE = (
-    "{% for book in books %}"
-    "{% if show_description %}"
-    "{{ book.description }}"
-    "{% endif %}"
-    "{% endfor %}"
-)
+CONST_IF_TEMPLATE = "{% for book in books %}{% if show_description %}{{ book.description }}{% endif %}{% endfor %}"
 
 
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture
 def stock():
@@ -242,6 +231,7 @@ def _assert_engines_match(stock, cyth, template_string, context):
 # ---------------------------------------------------------------------------
 # Integration tests — realistic templates
 # ---------------------------------------------------------------------------
+
 
 class TestRealisticTemplate:
     """Test the full realistic benchmark template (cycle + if/elif + counter + filters)."""
@@ -276,29 +266,37 @@ class TestRealisticWithFormsTemplate:
 
     def test_single_book_with_forms(self, stock, cyth):
         ctx = {
-            "books": _make_books(1, with_forms=True), "show_description": True,
-            "currency": "$", "site_name": "BookShop",
+            "books": _make_books(1, with_forms=True),
+            "show_description": True,
+            "currency": "$",
+            "site_name": "BookShop",
         }
         _assert_engines_match(stock, cyth, BOOKS_WITH_FORMS_TEMPLATE, ctx)
 
     def test_three_books_with_forms(self, stock, cyth):
         ctx = {
-            "books": _make_books(3, with_forms=True), "show_description": True,
-            "currency": "$", "site_name": "BookShop",
+            "books": _make_books(3, with_forms=True),
+            "show_description": True,
+            "currency": "$",
+            "site_name": "BookShop",
         }
         _assert_engines_match(stock, cyth, BOOKS_WITH_FORMS_TEMPLATE, ctx)
 
     def test_ten_books_with_forms(self, stock, cyth):
         ctx = {
-            "books": _make_books(10, with_forms=True), "show_description": True,
-            "currency": "$", "site_name": "BookShop",
+            "books": _make_books(10, with_forms=True),
+            "show_description": True,
+            "currency": "$",
+            "site_name": "BookShop",
         }
         _assert_engines_match(stock, cyth, BOOKS_WITH_FORMS_TEMPLATE, ctx)
 
     def test_fifty_books_with_forms(self, stock, cyth):
         ctx = {
-            "books": _make_books(50, with_forms=True), "show_description": True,
-            "currency": "$", "site_name": "BookShop",
+            "books": _make_books(50, with_forms=True),
+            "show_description": True,
+            "currency": "$",
+            "site_name": "BookShop",
         }
         _assert_engines_match(stock, cyth, BOOKS_WITH_FORMS_TEMPLATE, ctx)
 
@@ -379,64 +377,73 @@ class TestCustomSimpleTag:
 
     def test_simple_tag_basic(self, stock, cyth):
         _assert_engines_match(
-            stock, cyth,
+            stock,
+            cyth,
             '{% load custom_tags %}{% greeting "World" %}',
             {},
         )
 
     def test_simple_tag_with_variable(self, stock, cyth):
         _assert_engines_match(
-            stock, cyth,
-            '{% load custom_tags %}{% greeting name %}',
+            stock,
+            cyth,
+            "{% load custom_tags %}{% greeting name %}",
             {"name": "Alice"},
         )
 
     def test_simple_tag_multiple_args(self, stock, cyth):
         _assert_engines_match(
-            stock, cyth,
-            '{% load custom_tags %}{% add_numbers 3 7 %}',
+            stock,
+            cyth,
+            "{% load custom_tags %}{% add_numbers 3 7 %}",
             {},
         )
 
     def test_simple_tag_takes_context(self, stock, cyth):
         _assert_engines_match(
-            stock, cyth,
-            '{% load custom_tags %}{% current_user_greeting %}',
+            stock,
+            cyth,
+            "{% load custom_tags %}{% current_user_greeting %}",
             {"user_name": "Bob"},
         )
 
     def test_simple_tag_takes_context_default(self, stock, cyth):
         _assert_engines_match(
-            stock, cyth,
-            '{% load custom_tags %}{% current_user_greeting %}',
+            stock,
+            cyth,
+            "{% load custom_tags %}{% current_user_greeting %}",
             {},
         )
 
     def test_simple_tag_kwarg(self, stock, cyth):
         _assert_engines_match(
-            stock, cyth,
+            stock,
+            cyth,
             '{% load custom_tags %}{% format_price 19.99 currency="€" %}',
             {},
         )
 
     def test_simple_tag_kwarg_default(self, stock, cyth):
         _assert_engines_match(
-            stock, cyth,
-            '{% load custom_tags %}{% format_price 9.5 %}',
+            stock,
+            cyth,
+            "{% load custom_tags %}{% format_price 9.5 %}",
             {},
         )
 
     def test_simple_tag_as_variable(self, stock, cyth):
         _assert_engines_match(
-            stock, cyth,
+            stock,
+            cyth,
             '{% load custom_tags %}{% greeting "World" as g %}({{ g }})',
             {},
         )
 
     def test_simple_tag_in_loop(self, stock, cyth):
         _assert_engines_match(
-            stock, cyth,
-            '{% load custom_tags %}{% for name in names %}{% greeting name %} {% endfor %}',
+            stock,
+            cyth,
+            "{% load custom_tags %}{% for name in names %}{% greeting name %} {% endfor %}",
             {"names": ["Alice", "Bob", "Carol"]},
         )
 
@@ -446,41 +453,48 @@ class TestCustomInclusionTag:
 
     def test_inclusion_tag_basic(self, stock, cyth):
         _assert_engines_match(
-            stock, cyth,
+            stock,
+            cyth,
             '{% load custom_tags %}{% badge "New" %}',
             {},
         )
 
     def test_inclusion_tag_with_kwarg(self, stock, cyth):
         _assert_engines_match(
-            stock, cyth,
+            stock,
+            cyth,
             '{% load custom_tags %}{% badge "Error" kind="danger" %}',
             {},
         )
 
     def test_inclusion_tag_takes_context(self, stock, cyth):
         _assert_engines_match(
-            stock, cyth,
-            '{% load custom_tags %}{% user_card %}',
+            stock,
+            cyth,
+            "{% load custom_tags %}{% user_card %}",
             {"user_name": "Alice", "role": "admin"},
         )
 
     def test_inclusion_tag_takes_context_defaults(self, stock, cyth):
         _assert_engines_match(
-            stock, cyth,
-            '{% load custom_tags %}{% user_card %}',
+            stock,
+            cyth,
+            "{% load custom_tags %}{% user_card %}",
             {},
         )
 
     def test_inclusion_tag_in_loop(self, stock, cyth):
         _assert_engines_match(
-            stock, cyth,
-            '{% load custom_tags %}{% for item in items %}{% badge item.label item.kind %}{% endfor %}',
-            {"items": [
-                {"label": "Info", "kind": "info"},
-                {"label": "Warn", "kind": "warning"},
-                {"label": "OK", "kind": "success"},
-            ]},
+            stock,
+            cyth,
+            "{% load custom_tags %}{% for item in items %}{% badge item.label item.kind %}{% endfor %}",
+            {
+                "items": [
+                    {"label": "Info", "kind": "info"},
+                    {"label": "Warn", "kind": "warning"},
+                    {"label": "OK", "kind": "success"},
+                ]
+            },
         )
 
 
@@ -489,57 +503,66 @@ class TestCustomNodeSubclass:
 
     def test_repeat_literal(self, stock, cyth):
         _assert_engines_match(
-            stock, cyth,
-            '{% load custom_tags %}{% repeat 3 %}ha{% endrepeat %}',
+            stock,
+            cyth,
+            "{% load custom_tags %}{% repeat 3 %}ha{% endrepeat %}",
             {},
         )
 
     def test_repeat_variable(self, stock, cyth):
         _assert_engines_match(
-            stock, cyth,
-            '{% load custom_tags %}{% repeat count %}{{ word }}{% endrepeat %}',
+            stock,
+            cyth,
+            "{% load custom_tags %}{% repeat count %}{{ word }}{% endrepeat %}",
             {"count": 4, "word": "yo"},
         )
 
     def test_repeat_with_loop_inside(self, stock, cyth):
         _assert_engines_match(
-            stock, cyth,
-            '{% load custom_tags %}{% repeat 2 %}{% for x in items %}{{ x }}{% endfor %}-{% endrepeat %}',
+            stock,
+            cyth,
+            "{% load custom_tags %}{% repeat 2 %}{% for x in items %}{{ x }}{% endfor %}-{% endrepeat %}",
             {"items": ["a", "b"]},
         )
 
     def test_upper_tag(self, stock, cyth):
         _assert_engines_match(
-            stock, cyth,
-            '{% load custom_tags %}{% upper %}hello {{ name }}{% endupper %}',
+            stock,
+            cyth,
+            "{% load custom_tags %}{% upper %}hello {{ name }}{% endupper %}",
             {"name": "world"},
         )
 
     def test_upper_with_html(self, stock, cyth):
         _assert_engines_match(
-            stock, cyth,
-            '{% load custom_tags %}{% upper %}{{ text }}{% endupper %}',
+            stock,
+            cyth,
+            "{% load custom_tags %}{% upper %}{{ text }}{% endupper %}",
             {"text": "<b>bold</b>"},
         )
 
     def test_nested_custom_tags(self, stock, cyth):
         _assert_engines_match(
-            stock, cyth,
-            '{% load custom_tags %}{% repeat 2 %}{% upper %}{{ word }}{% endupper %}-{% endrepeat %}',
+            stock,
+            cyth,
+            "{% load custom_tags %}{% repeat 2 %}{% upper %}{{ word }}{% endupper %}-{% endrepeat %}",
             {"word": "hi"},
         )
 
     def test_custom_tag_in_for_loop(self, stock, cyth):
         """Custom tags inside a for loop — tests interaction with LOOPATTR etc."""
         _assert_engines_match(
-            stock, cyth,
-            '{% load custom_tags %}'
-            '{% for item in items %}'
-            '{% repeat item.count %}{{ item.word }}{% endrepeat %}|'
-            '{% endfor %}',
-            {"items": [
-                {"count": 2, "word": "a"},
-                {"count": 3, "word": "b"},
-                {"count": 1, "word": "c"},
-            ]},
+            stock,
+            cyth,
+            "{% load custom_tags %}"
+            "{% for item in items %}"
+            "{% repeat item.count %}{{ item.word }}{% endrepeat %}|"
+            "{% endfor %}",
+            {
+                "items": [
+                    {"count": 2, "word": "a"},
+                    {"count": 3, "word": "b"},
+                    {"count": 1, "word": "c"},
+                ]
+            },
         )

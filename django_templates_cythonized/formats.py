@@ -11,10 +11,10 @@ Key optimizations over Django's implementation:
 - Early exit for ints when USE_THOUSAND_SEPARATOR is False (the default)
 """
 
-import cython
 import datetime
 import decimal
 
+import cython
 from django.conf import settings
 from django.utils.formats import date_format, get_format, time_format
 from django.utils.translation import get_language
@@ -66,8 +66,7 @@ def _get_number_formats(lang):
 
 
 @cython.cfunc
-def _format_number(number, decimal_sep, decimal_pos, grouping, thousand_sep,
-                   use_grouping):
+def _format_number(number, decimal_sep, decimal_pos, grouping, thousand_sep, use_grouping):
     """
     C-level reimplementation of django.utils.numberformat.format().
 
@@ -91,21 +90,24 @@ def _format_number(number, decimal_sep, decimal_pos, grouping, thousand_sep,
         if decimal_pos is not None:
             cutoff = decimal.Decimal("0." + "1".rjust(decimal_pos, "0"))
             if abs(number) < cutoff:
-                number = decimal.Decimal("0")
+                number = decimal.Decimal(0)
 
         # Format values with more than 200 digits using scientific notation
         # to avoid high memory usage in {:f}.format().
         _, digits, exponent = number.as_tuple()
         if abs(exponent) + len(digits) > 200:
-            number_str = "{:e}".format(number)
+            number_str = f"{number:e}"
             coefficient, exp_str = number_str.split("e")
             coefficient = _format_number(
-                coefficient, decimal_sep, decimal_pos, grouping,
-                thousand_sep, use_grouping,
+                coefficient,
+                decimal_sep,
+                decimal_pos,
+                grouping,
+                thousand_sep,
+                use_grouping,
             )
-            return "{}e{}".format(coefficient, exp_str)
-        else:
-            str_number = "{:f}".format(number)
+            return f"{coefficient}e{exp_str}"
+        str_number = f"{number:f}"
     else:
         str_number = str(number)
 
@@ -180,7 +182,11 @@ def number_format(value, decimal_pos=None, use_l10n=None, force_grouping=False, 
     use_grouping = use_grouping and formats[1] != 0
 
     return _format_number(
-        value, formats[0], decimal_pos, formats[1], formats[2],
+        value,
+        formats[0],
+        decimal_pos,
+        formats[1],
+        formats[2],
         use_grouping,
     )
 
@@ -197,7 +203,7 @@ def localize(value, use_l10n=None, lang=None):
         return value
     # int check first (catches bool subclass too) — the most common numeric type.
     # Single isinstance(int) is faster than isinstance((Decimal, float, int)) tuple.
-    elif isinstance(value, int):
+    if isinstance(value, int):
         if isinstance(value, bool):
             return str(value)
         if use_l10n is False:
@@ -211,7 +217,7 @@ def localize(value, use_l10n=None, lang=None):
         if not uts:
             return str(value)
         return number_format(value, use_l10n=use_l10n, lang=lang)
-    elif isinstance(value, float):
+    if isinstance(value, float):
         if use_l10n is False:
             return str(value)
         # Float fast path: when USE_THOUSAND_SEPARATOR is False (default) and
@@ -226,14 +232,14 @@ def localize(value, use_l10n=None, lang=None):
             if fmt[0] == ".":
                 return str(value)
         return number_format(value, use_l10n=use_l10n, lang=lang)
-    elif isinstance(value, decimal.Decimal):
+    if isinstance(value, decimal.Decimal):
         if use_l10n is False:
             return str(value)
         return number_format(value, use_l10n=use_l10n, lang=lang)
-    elif isinstance(value, datetime.datetime):
+    if isinstance(value, datetime.datetime):
         return date_format(value, "DATETIME_FORMAT", use_l10n=use_l10n)
-    elif isinstance(value, datetime.date):
+    if isinstance(value, datetime.date):
         return date_format(value, use_l10n=use_l10n)
-    elif isinstance(value, datetime.time):
+    if isinstance(value, datetime.time):
         return time_format(value, use_l10n=use_l10n)
     return value

@@ -42,13 +42,15 @@ CYTH_TEMPLATES = [
     },
 ]
 
-# CSRF tokens are random per-request — normalize before comparison.
+# Non-deterministic content — normalize before comparison.
 _CSRF_RE = re.compile(r'value="[A-Za-z0-9]{32,}"')
+_TIME_RE = re.compile(r'value="\d{2}:\d{2}:\d{2}"')
 
 
 def _normalize(html):
     """Remove non-deterministic content from admin HTML."""
-    return _CSRF_RE.sub('value="CSRF"', html)
+    html = _CSRF_RE.sub('value="CSRF"', html)
+    return _TIME_RE.sub('value="TIME"', html)
 
 
 class TestAdminRender(TestCase):
@@ -56,9 +58,7 @@ class TestAdminRender(TestCase):
 
     @classmethod
     def setUpTestData(cls):
-        cls.superuser = User.objects.create_superuser(
-            username="admin", password="secret", email="admin@example.com"
-        )
+        cls.superuser = User.objects.create_superuser(username="admin", password="secret", email="admin@example.com")
 
     def _get(self, url):
         """GET a URL with both engines and assert identical output."""
@@ -72,8 +72,7 @@ class TestAdminRender(TestCase):
         self.assertEqual(
             stock_resp.status_code,
             cyth_resp.status_code,
-            f"Status mismatch for {url}: stock={stock_resp.status_code}, "
-            f"cyth={cyth_resp.status_code}",
+            f"Status mismatch for {url}: stock={stock_resp.status_code}, cyth={cyth_resp.status_code}",
         )
 
         stock_html = _normalize(stock_resp.content.decode())
@@ -87,12 +86,11 @@ class TestAdminRender(TestCase):
                     start = max(0, i - ctx)
                     self.fail(
                         f"HTML mismatch at char {i} for {url}:\n"
-                        f"  stock: ...{stock_html[start:i+ctx]!r}...\n"
-                        f"  cyth:  ...{cyth_html[start:i+ctx]!r}..."
+                        f"  stock: ...{stock_html[start : i + ctx]!r}...\n"
+                        f"  cyth:  ...{cyth_html[start : i + ctx]!r}..."
                     )
             # Different lengths
-            self.assertEqual(len(stock_html), len(cyth_html),
-                             f"HTML length mismatch for {url}")
+            self.assertEqual(len(stock_html), len(cyth_html), f"HTML length mismatch for {url}")
 
         return stock_resp.status_code
 

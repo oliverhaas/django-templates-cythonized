@@ -20,7 +20,19 @@ from django.utils.lorem_ipsum import paragraphs, words
 from .html import conditional_escape, escape
 from .safestring import SafeData, SafeString, mark_safe
 
-from cython.cimports.django_templates_cythonized.base import Node, TextNode, NodeList, VariableNode, FilterExpression, _fast_escape, _fast_escape_raw, _render_var_fast, _fe_is_direct_loopvar, _render_var_with_value, _resolve_fe_raw
+from cython.cimports.django_templates_cythonized.base import (
+    Node,
+    TextNode,
+    NodeList,
+    VariableNode,
+    FilterExpression,
+    _fast_escape,
+    _fast_escape_raw,
+    _render_var_fast,
+    _fe_is_direct_loopvar,
+    _render_var_with_value,
+    _resolve_fe_raw,
+)
 from cython.cimports.django_templates_cythonized.context import Context
 from cython.cimports.django_templates_cythonized.formats import localize, _float_is_str_fast
 from cython.cimports.django_templates_cythonized.smartif import Literal, Operator, TokenBase
@@ -57,8 +69,8 @@ register = Library()
 class AutoEscapeControlNode(Node):
     """Implement the actions of the autoescape tag."""
 
-    setting = cython.declare(cython.bint, visibility='public')
-    nodelist = cython.declare(object, visibility='public')
+    setting = cython.declare(cython.bint, visibility="public")
+    nodelist = cython.declare(object, visibility="public")
 
     def __init__(self, setting, nodelist):
         self.setting = setting
@@ -114,12 +126,12 @@ class CsrfTokenNode(Node):
 
 @cython.cclass
 class CycleNode(Node):
-    cyclevars = cython.declare(list, visibility='public')
-    variable_name = cython.declare(object, visibility='public')
-    silent = cython.declare(cython.bint, visibility='public')
-    _preresolved = cython.declare(tuple, visibility='public')
-    _n = cython.declare(cython.Py_ssize_t, visibility='public')
-    _needs_escape = cython.declare(cython.bint, visibility='public')
+    cyclevars = cython.declare(list, visibility="public")
+    variable_name = cython.declare(object, visibility="public")
+    silent = cython.declare(cython.bint, visibility="public")
+    _preresolved = cython.declare(tuple, visibility="public")
+    _n = cython.declare(cython.Py_ssize_t, visibility="public")
+    _needs_escape = cython.declare(cython.bint, visibility="public")
 
     def __init__(self, cyclevars, variable_name=None, silent=False):
         self.cyclevars = cyclevars
@@ -201,8 +213,8 @@ class DebugNode(Node):
 
 @cython.cclass
 class FilterNode(Node):
-    filter_expr = cython.declare(object, visibility='public')
-    nodelist = cython.declare(object, visibility='public')
+    filter_expr = cython.declare(object, visibility="public")
+    nodelist = cython.declare(object, visibility="public")
 
     def __init__(self, filter_expr, nodelist):
         self.filter_expr = filter_expr
@@ -218,8 +230,8 @@ class FilterNode(Node):
 
 @cython.cclass
 class FirstOfNode(Node):
-    vars = cython.declare(list, visibility='public')
-    asvar = cython.declare(object, visibility='public')
+    vars = cython.declare(list, visibility="public")
+    asvar = cython.declare(object, visibility="public")
 
     def __init__(self, variables, asvar=None):
         self.vars = variables
@@ -245,10 +257,10 @@ class CForloopContext:
     counter/revcounter/first/last on demand via __getitem__. Replaces the
     plain dict that Django writes 6 keys to on every loop iteration."""
 
-    _i = cython.declare(cython.Py_ssize_t, visibility='public')
-    _length = cython.declare(cython.Py_ssize_t, visibility='public')
-    _parentloop = cython.declare(object, visibility='public')
-    _extra = cython.declare(dict, visibility='public')
+    _i = cython.declare(cython.Py_ssize_t, visibility="public")
+    _length = cython.declare(cython.Py_ssize_t, visibility="public")
+    _parentloop = cython.declare(object, visibility="public")
+    _extra = cython.declare(dict, visibility="public")
 
     def __init__(self, length, parentloop):
         self._i = 0
@@ -284,8 +296,14 @@ class CForloopContext:
 
     def __contains__(self, key):
         if isinstance(key, str) and key in (
-            "counter0", "counter", "revcounter", "revcounter0",
-            "first", "last", "length", "parentloop",
+            "counter0",
+            "counter",
+            "revcounter",
+            "revcounter0",
+            "first",
+            "last",
+            "length",
+            "parentloop",
         ):
             return True
         return self._extra is not None and key in self._extra
@@ -300,16 +318,14 @@ class CForloopContext:
 
 @cython.cclass
 class ForNode(Node):
-    loopvars = cython.declare(list, visibility='public')
-    sequence = cython.declare(object, visibility='public')
-    is_reversed = cython.declare(cython.bint, visibility='public')
-    nodelist_loop = cython.declare(object, visibility='public')
-    nodelist_empty = cython.declare(object, visibility='public')
+    loopvars = cython.declare(list, visibility="public")
+    sequence = cython.declare(object, visibility="public")
+    is_reversed = cython.declare(cython.bint, visibility="public")
+    nodelist_loop = cython.declare(object, visibility="public")
+    nodelist_empty = cython.declare(object, visibility="public")
     child_nodelists = ("nodelist_loop", "nodelist_empty")
 
-    def __init__(
-        self, loopvars, sequence, is_reversed, nodelist_loop, nodelist_empty=None
-    ):
+    def __init__(self, loopvars, sequence, is_reversed, nodelist_loop, nodelist_empty=None):
         self.loopvars = loopvars
         self.sequence = sequence
         self.is_reversed = is_reversed
@@ -445,23 +461,25 @@ class ForNode(Node):
                                             elif _nf == 1:
                                                 _ntags[j] = 3  # LOOPATTR_FILTER
                                                 _nattrs[j] = _lkt[1]
-                                    elif _lkc[0] == 'forloop' and len(_lkc) == 2 and len(_fec.filters) == 0:
+                                    elif _lkc[0] == "forloop" and len(_lkc) == 2 and len(_fec.filters) == 0:
                                         # {{ forloop.counter }}, {{ forloop.counter0 }}, etc.
                                         # Use loop_ctx directly instead of context dict scan.
                                         _fl_attr = _lkc[1]
-                                        if _fl_attr == 'counter':
+                                        if _fl_attr == "counter":
                                             _ntags[j] = 8
                                             _nattrs[j] = 1  # offset from _i
-                                        elif _fl_attr == 'counter0':
+                                        elif _fl_attr == "counter0":
                                             _ntags[j] = 8
                                             _nattrs[j] = 0
-                                        elif _fl_attr == 'revcounter':
+                                        elif _fl_attr == "revcounter":
                                             _ntags[j] = 8
                                             _nattrs[j] = -1  # signal for revcounter
-                                        elif _fl_attr == 'revcounter0':
+                                        elif _fl_attr == "revcounter0":
                                             _ntags[j] = 8
                                             _nattrs[j] = -2  # signal for revcounter0
-                                    elif _can_cache_consts and _lkc[0] != 'forloop' and _lkc[0] not in _loop_written_vars:
+                                    elif (
+                                        _can_cache_consts and _lkc[0] != "forloop" and _lkc[0] not in _loop_written_vars
+                                    ):
                                         # Non-loop variable (e.g. {{ currency }}) —
                                         # render once and cache as text.
                                         # Only safe when no OTHER nodes exist that
@@ -486,7 +504,7 @@ class ForNode(Node):
                                     _tl_var_c = _tl_fe_c.var
                                     _tl_lk_c = _tl_var_c.lookups
                                     if _tl_lk_c is not None and len(_tl_lk_c) >= 1:
-                                        if _tl_lk_c[0] == loopvar0 or _tl_lk_c[0] == 'forloop':
+                                        if _tl_lk_c[0] == loopvar0 or _tl_lk_c[0] == "forloop":
                                             _is_const = False
                                             break
                             elif isinstance(_cond_c, Operator):
@@ -502,7 +520,7 @@ class ForNode(Node):
                                             _s_var = _s_fe.var
                                             _s_lk = _s_var.lookups
                                             if _s_lk is not None and len(_s_lk) >= 1:
-                                                if _s_lk[0] == loopvar0 or _s_lk[0] == 'forloop':
+                                                if _s_lk[0] == loopvar0 or _s_lk[0] == "forloop":
                                                     _is_const = False
                                                     break
                                     elif _side_c is not None and not isinstance(_side_c, TemplateLiteral):
@@ -707,9 +725,7 @@ class ForNode(Node):
                             nodelist[idx] = inner_tnode.s
                         else:
                             inner_vnode: VariableNode = inner_node
-                            nodelist[idx] = _render_var_with_value(
-                                inner_vnode.filter_expression, item, context
-                            )
+                            nodelist[idx] = _render_var_with_value(inner_vnode.filter_expression, item, context)
                         idx += 1
             elif _ntags is not None:
                 # OPTIMIZED LOOP: pre-classified LOOPATTR dispatch.
@@ -757,23 +773,21 @@ class ForNode(Node):
                                 _lang = context._lang
                                 if _lang is None:
                                     from django.utils.translation import get_language
+
                                     _lang = get_language()
                                     context._lang = _lang
-                                nodelist[idx] = localize(
-                                    _av, use_l10n=context.use_l10n, lang=_lang
-                                )
+                                nodelist[idx] = localize(_av, use_l10n=context.use_l10n, lang=_lang)
                             elif isinstance(_av, float):
                                 _lang = context._lang
                                 if _lang is None:
                                     from django.utils.translation import get_language
+
                                     _lang = get_language()
                                     context._lang = _lang
                                 if _float_is_str_fast(_lang):
                                     nodelist[idx] = str(_av)
                                 else:
-                                    nodelist[idx] = localize(
-                                        _av, use_l10n=context.use_l10n, lang=_lang
-                                    )
+                                    nodelist[idx] = localize(_av, use_l10n=context.use_l10n, lang=_lang)
                             elif callable(_av):
                                 nodelist[idx] = loop_nodes[j].render(context)
                             else:
@@ -800,9 +814,7 @@ class ForNode(Node):
                                 nodelist[idx] = loop_nodes[j].render(context)
                             else:
                                 _rvn: VariableNode = loop_nodes[j]
-                                result = _render_var_with_value(
-                                    _rvn.filter_expression, _av, context
-                                )
+                                result = _render_var_with_value(_rvn.filter_expression, _av, context)
                                 if result is not None:
                                     nodelist[idx] = result
                                 else:
@@ -967,9 +979,7 @@ class ForNode(Node):
                                 nodelist[idx] = str(len_values - i - 1)
                         elif _tag == 1:  # VariableNode
                             _rvn2: VariableNode = loop_nodes[j]
-                            result = _render_var_fast(
-                                _rvn2.filter_expression, context
-                            )
+                            result = _render_var_fast(_rvn2.filter_expression, context)
                             if result is not None:
                                 nodelist[idx] = result
                             else:
@@ -992,9 +1002,7 @@ class ForNode(Node):
                         # Check loop variable count before unpacking
                         if num_loopvars != len_item:
                             raise ValueError(
-                                "Need {} values to unpack in for loop; got {}. ".format(
-                                    num_loopvars, len_item
-                                ),
+                                "Need {} values to unpack in for loop; got {}. ".format(num_loopvars, len_item),
                             )
                         unpacked_vars = dict(zip(self.loopvars, item))
                         pop_context = True
@@ -1034,9 +1042,9 @@ class ForNode(Node):
 
 @cython.cclass
 class IfChangedNode(Node):
-    nodelist_true = cython.declare(object, visibility='public')
-    nodelist_false = cython.declare(object, visibility='public')
-    _varlist = cython.declare(tuple, visibility='public')
+    nodelist_true = cython.declare(object, visibility="public")
+    nodelist_false = cython.declare(object, visibility="public")
+    _varlist = cython.declare(tuple, visibility="public")
     child_nodelists = ("nodelist_true", "nodelist_false")
 
     def __init__(self, nodelist_true, nodelist_false, *varlist):
@@ -1054,9 +1062,7 @@ class IfChangedNode(Node):
         if self._varlist:
             # Consider multiple parameters. This behaves like an OR evaluation
             # of the multiple variables.
-            compare_to = [
-                var.resolve(context, ignore_failures=True) for var in self._varlist
-            ]
+            compare_to = [var.resolve(context, ignore_failures=True) for var in self._varlist]
         else:
             # The "{% ifchanged %}" syntax (without any variables) compares
             # the rendered output.
@@ -1088,7 +1094,7 @@ class IfChangedNode(Node):
 
 @cython.cclass
 class IfNode(Node):
-    conditions_nodelists = cython.declare(list, visibility='public')
+    conditions_nodelists = cython.declare(list, visibility="public")
 
     def __init__(self, conditions_nodelists):
         self.conditions_nodelists = conditions_nodelists
@@ -1136,9 +1142,9 @@ class IfNode(Node):
 
 @cython.cclass
 class LoremNode(Node):
-    count = cython.declare(object, visibility='public')
-    method = cython.declare(object, visibility='public')
-    common = cython.declare(cython.bint, visibility='public')
+    count = cython.declare(object, visibility="public")
+    method = cython.declare(object, visibility="public")
+    common = cython.declare(cython.bint, visibility="public")
 
     def __init__(self, count, method, common):
         self.count = count
@@ -1165,9 +1171,9 @@ GroupedResult = namedtuple("GroupedResult", ["grouper", "list"])
 
 @cython.cclass
 class RegroupNode(Node):
-    target = cython.declare(object, visibility='public')
-    expression = cython.declare(object, visibility='public')
-    var_name = cython.declare(object, visibility='public')
+    target = cython.declare(object, visibility="public")
+    expression = cython.declare(object, visibility="public")
+    var_name = cython.declare(object, visibility="public")
 
     def __init__(self, target, expression, var_name):
         self.target = target
@@ -1185,9 +1191,7 @@ class RegroupNode(Node):
         # Separate method because lambdas (closures) aren't allowed in cpdef.
         return [
             GroupedResult(grouper=key, list=list(val))
-            for key, val in groupby(
-                obj_list, lambda obj: self.resolve_expression(obj, context)
-            )
+            for key, val in groupby(obj_list, lambda obj: self.resolve_expression(obj, context))
         ]
 
     @cython.ccall
@@ -1214,8 +1218,8 @@ class LoadNode(Node):
 
 @cython.cclass
 class NowNode(Node):
-    format_string = cython.declare(object, visibility='public')
-    asvar = cython.declare(object, visibility='public')
+    format_string = cython.declare(object, visibility="public")
+    asvar = cython.declare(object, visibility="public")
 
     def __init__(self, format_string, asvar=None):
         self.format_string = format_string
@@ -1235,9 +1239,9 @@ class NowNode(Node):
 
 @cython.cclass
 class PartialDefNode(Node):
-    partial_name = cython.declare(object, visibility='public')
-    inline = cython.declare(cython.bint, visibility='public')
-    nodelist = cython.declare(object, visibility='public')
+    partial_name = cython.declare(object, visibility="public")
+    inline = cython.declare(cython.bint, visibility="public")
+    nodelist = cython.declare(object, visibility="public")
 
     def __init__(self, partial_name, inline, nodelist):
         self.partial_name = partial_name
@@ -1251,8 +1255,8 @@ class PartialDefNode(Node):
 
 @cython.cclass
 class PartialNode(Node):
-    partial_name = cython.declare(object, visibility='public')
-    partial_mapping = cython.declare(object, visibility='public')
+    partial_name = cython.declare(object, visibility="public")
+    partial_mapping = cython.declare(object, visibility="public")
 
     def __init__(self, partial_name, partial_mapping):
         # Defer lookup in `partial_mapping` and nodelist to runtime.
@@ -1264,14 +1268,12 @@ class PartialNode(Node):
         try:
             return self.partial_mapping[self.partial_name].render(context)
         except KeyError:
-            raise TemplateSyntaxError(
-                f"Partial '{self.partial_name}' is not defined in the current template."
-            )
+            raise TemplateSyntaxError(f"Partial '{self.partial_name}' is not defined in the current template.")
 
 
 @cython.cclass
 class ResetCycleNode(Node):
-    node = cython.declare(object, visibility='public')
+    node = cython.declare(object, visibility="public")
 
     def __init__(self, node):
         self.node = node
@@ -1284,7 +1286,7 @@ class ResetCycleNode(Node):
 
 @cython.cclass
 class SpacelessNode(Node):
-    nodelist = cython.declare(object, visibility='public')
+    nodelist = cython.declare(object, visibility="public")
 
     def __init__(self, nodelist):
         self.nodelist = nodelist
@@ -1298,7 +1300,7 @@ class SpacelessNode(Node):
 
 @cython.cclass
 class TemplateTagNode(Node):
-    tagtype = cython.declare(object, visibility='public')
+    tagtype = cython.declare(object, visibility="public")
     mapping = {
         "openblock": BLOCK_TAG_START,
         "closeblock": BLOCK_TAG_END,
@@ -1320,10 +1322,10 @@ class TemplateTagNode(Node):
 
 @cython.cclass
 class URLNode(Node):
-    view_name = cython.declare(object, visibility='public')
-    args = cython.declare(list, visibility='public')
-    kwargs = cython.declare(dict, visibility='public')
-    asvar = cython.declare(object, visibility='public')
+    view_name = cython.declare(object, visibility="public")
+    args = cython.declare(list, visibility="public")
+    kwargs = cython.declare(dict, visibility="public")
+    asvar = cython.declare(object, visibility="public")
     child_nodelists = ()
 
     def __init__(self, view_name, args, kwargs, asvar):
@@ -1375,7 +1377,7 @@ class URLNode(Node):
 
 @cython.cclass
 class VerbatimNode(Node):
-    content = cython.declare(object, visibility='public')
+    content = cython.declare(object, visibility="public")
 
     def __init__(self, content):
         self.content = content
@@ -1387,10 +1389,10 @@ class VerbatimNode(Node):
 
 @cython.cclass
 class WidthRatioNode(Node):
-    val_expr = cython.declare(object, visibility='public')
-    max_expr = cython.declare(object, visibility='public')
-    max_width = cython.declare(object, visibility='public')
-    asvar = cython.declare(object, visibility='public')
+    val_expr = cython.declare(object, visibility="public")
+    max_expr = cython.declare(object, visibility="public")
+    max_width = cython.declare(object, visibility="public")
+    asvar = cython.declare(object, visibility="public")
 
     def __init__(self, val_expr, max_expr, max_width, asvar=None):
         self.val_expr = val_expr
@@ -1427,8 +1429,8 @@ class WidthRatioNode(Node):
 
 @cython.cclass
 class WithNode(Node):
-    nodelist = cython.declare(object, visibility='public')
-    extra_context = cython.declare(dict, visibility='public')
+    nodelist = cython.declare(object, visibility="public")
+    extra_context = cython.declare(dict, visibility="public")
 
     def __init__(self, var, name, nodelist, extra_context=None):
         self.nodelist = nodelist
@@ -1530,9 +1532,7 @@ def cycle(parser, token):
         # {% cycle foo %} case.
         name = args[1]
         if not hasattr(parser, "_named_cycle_nodes"):
-            raise TemplateSyntaxError(
-                "No named cycles in template. '%s' is not defined" % name
-            )
+            raise TemplateSyntaxError("No named cycles in template. '%s' is not defined" % name)
         if name not in parser._named_cycle_nodes:
             raise TemplateSyntaxError("Named cycle '%s' does not exist" % name)
         return parser._named_cycle_nodes[name]
@@ -1543,10 +1543,7 @@ def cycle(parser, token):
         # {% cycle ... as foo [silent] %} case.
         if args[-3] == "as":
             if args[-1] != "silent":
-                raise TemplateSyntaxError(
-                    "Only 'silent' flag is allowed after cycle's name, not '%s'."
-                    % args[-1]
-                )
+                raise TemplateSyntaxError("Only 'silent' flag is allowed after cycle's name, not '%s'." % args[-1])
             as_form = True
             silent = True
             args = args[:-1]
@@ -1613,10 +1610,7 @@ def do_filter(parser, token):
     for fi in filter_expr.filters:
         filter_name = getattr(fi.func, "_filter_name", None)
         if filter_name in ("escape", "safe"):
-            raise TemplateSyntaxError(
-                '"filter %s" is not permitted. Use the "autoescape" tag instead.'
-                % filter_name
-            )
+            raise TemplateSyntaxError('"filter %s" is not permitted. Use the "autoescape" tag instead.' % filter_name)
     nodelist = parser.parse(("endfilter",))
     parser.delete_first_token()
     return FilterNode(filter_expr, nodelist)
@@ -1737,25 +1731,18 @@ def do_for(parser, token):
     """
     bits = token.split_contents()
     if len(bits) < 4:
-        raise TemplateSyntaxError(
-            "'for' statements should have at least four words: %s" % token.contents
-        )
+        raise TemplateSyntaxError("'for' statements should have at least four words: %s" % token.contents)
 
     is_reversed = bits[-1] == "reversed"
     in_index = -3 if is_reversed else -2
     if bits[in_index] != "in":
-        raise TemplateSyntaxError(
-            "'for' statements should use the format"
-            " 'for x in y': %s" % token.contents
-        )
+        raise TemplateSyntaxError("'for' statements should use the format 'for x in y': %s" % token.contents)
 
     invalid_chars = frozenset((" ", '"', "'", FILTER_SEPARATOR))
     loopvars = re.split(r" *, *", " ".join(bits[1:in_index]))
     for var in loopvars:
         if not var or not invalid_chars.isdisjoint(var):
-            raise TemplateSyntaxError(
-                "'for' tag received an invalid argument: %s" % token.contents
-            )
+            raise TemplateSyntaxError("'for' tag received an invalid argument: %s" % token.contents)
 
     sequence = parser.compile_filter(bits[in_index + 1])
     nodelist_loop = parser.parse(
@@ -1775,7 +1762,7 @@ def do_for(parser, token):
 
 @cython.cclass
 class TemplateLiteral(Literal):
-    text = cython.declare(object, visibility='public')
+    text = cython.declare(object, visibility="public")
 
     def __init__(self, value, text):
         self.value = value
@@ -1889,11 +1876,7 @@ def do_if(parser, token):
 
     # {% endif %}
     if token.contents != "endif":
-        raise TemplateSyntaxError(
-            'Malformed template tag at line {}: "{}"'.format(
-                token.lineno, token.contents
-            )
-        )
+        raise TemplateSyntaxError('Malformed template tag at line {}: "{}"'.format(token.lineno, token.contents))
 
     return IfNode(conditions_nodelists)
 
@@ -2102,8 +2085,7 @@ def partialdef_func(parser, token):
         inline = True
     elif len(bits) == 3:
         raise TemplateSyntaxError(
-            "The 'inline' argument does not have any parameters; either use "
-            "'inline' or remove it completely."
+            "The 'inline' argument does not have any parameters; either use 'inline' or remove it completely."
         )
     elif len(bits) == 2:
         partial_name = bits[1]
@@ -2131,8 +2113,7 @@ def partialdef_func(parser, token):
     partials = parser.extra_data.setdefault("partials", {})
     if partial_name in partials:
         raise TemplateSyntaxError(
-            f"Partial '{partial_name}' is already defined in the "
-            f"'{parser.origin.name}' template."
+            f"Partial '{partial_name}' is already defined in the '{parser.origin.name}' template."
         )
     partials[partial_name] = PartialTemplate(
         nodelist,
@@ -2208,17 +2189,11 @@ def querystring(context, *args, **kwargs):
     params = QueryDict(mutable=True)
     for d in [*args, kwargs]:
         if not isinstance(d, Mapping):
-            raise TemplateSyntaxError(
-                "querystring requires mappings for positional arguments (got "
-                "%r instead)." % d
-            )
+            raise TemplateSyntaxError("querystring requires mappings for positional arguments (got %r instead)." % d)
         items = d.lists() if isinstance(d, QueryDict) else d.items()
         for key, value in items:
             if not isinstance(key, str):
-                raise TemplateSyntaxError(
-                    "querystring requires strings for mapping keys (got %r "
-                    "instead)." % key
-                )
+                raise TemplateSyntaxError("querystring requires strings for mapping keys (got %r instead)." % key)
             if value is None:
                 params.pop(key, None)
             elif isinstance(value, Iterable) and not isinstance(value, str):
@@ -2292,9 +2267,7 @@ def regroup(parser, token):
     # save the final result in the context under 'var_name', thus clearing the
     # temporary values. This hack is necessary because the template engine
     # doesn't provide a context-aware equivalent of Python's getattr.
-    expression = parser.compile_filter(
-        var_name + VARIABLE_ATTRIBUTE_SEPARATOR + bits[3]
-    )
+    expression = parser.compile_filter(var_name + VARIABLE_ATTRIBUTE_SEPARATOR + bits[3])
     return RegroupNode(target, expression, var_name)
 
 
@@ -2386,8 +2359,7 @@ def templatetag(parser, token):
     tag = bits[1]
     if tag not in TemplateTagNode.mapping:
         raise TemplateSyntaxError(
-            "Invalid templatetag argument: '%s'."
-            " Must be one of: %s" % (tag, list(TemplateTagNode.mapping))
+            "Invalid templatetag argument: '%s'. Must be one of: %s" % (tag, list(TemplateTagNode.mapping))
         )
     return TemplateTagNode(tag)
 
@@ -2440,9 +2412,7 @@ def url(parser, token):
     """
     bits = token.split_contents()
     if len(bits) < 2:
-        raise TemplateSyntaxError(
-            "'%s' takes at least one argument, a URL pattern name." % bits[0]
-        )
+        raise TemplateSyntaxError("'%s' takes at least one argument, a URL pattern name." % bits[0])
     viewname = parser.compile_filter(bits[1])
     args = []
     kwargs = {}
@@ -2517,9 +2487,7 @@ def widthratio(parser, token):
     elif len(bits) == 6:
         tag, this_value_expr, max_value_expr, max_width, as_, asvar = bits
         if as_ != "as":
-            raise TemplateSyntaxError(
-                "Invalid syntax in widthratio tag. Expecting 'as' keyword"
-            )
+            raise TemplateSyntaxError("Invalid syntax in widthratio tag. Expecting 'as' keyword")
     else:
         raise TemplateSyntaxError("widthratio takes at least three arguments")
 
@@ -2556,13 +2524,9 @@ def do_with(parser, token):
     remaining_bits = bits[1:]
     extra_context = token_kwargs(remaining_bits, parser, support_legacy=True)
     if not extra_context:
-        raise TemplateSyntaxError(
-            "%r expected at least one variable assignment" % bits[0]
-        )
+        raise TemplateSyntaxError("%r expected at least one variable assignment" % bits[0])
     if remaining_bits:
-        raise TemplateSyntaxError(
-            "%r received an invalid token: %r" % (bits[0], remaining_bits[0])
-        )
+        raise TemplateSyntaxError("%r received an invalid token: %r" % (bits[0], remaining_bits[0]))
     nodelist = parser.parse(("endwith",))
     parser.delete_first_token()
     return WithNode(None, None, nodelist, extra_context=extra_context)

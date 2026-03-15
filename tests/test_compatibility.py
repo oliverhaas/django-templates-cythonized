@@ -10,17 +10,17 @@ import datetime
 import os
 
 import pytest
-from django.test import RequestFactory, override_settings
 from django.template import engines
+from django.test import RequestFactory, override_settings
 from django.utils.functional import lazy
 from django.utils.safestring import SafeString, mark_safe
 
 from django_templates_cythonized.exceptions import TemplateSyntaxError
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture
 def stock():
@@ -38,15 +38,14 @@ def _m(stock, cyth, template_string, context=None):
         context = {}
     stock_result = stock.from_string(template_string).render(context)
     cyth_result = cyth.from_string(template_string).render(context)
-    assert cyth_result == stock_result, (
-        f"Mismatch!\n  stock: {stock_result!r}\n  cyth:  {cyth_result!r}"
-    )
+    assert cyth_result == stock_result, f"Mismatch!\n  stock: {stock_result!r}\n  cyth:  {cyth_result!r}"
     return stock_result
 
 
 # ---------------------------------------------------------------------------
 # Helper classes for variable resolution tests
 # ---------------------------------------------------------------------------
+
 
 class SimpleObj:
     def __init__(self, **kwargs):
@@ -74,6 +73,7 @@ class AltersDataObj:
 
     def delete(self):
         return "deleted!"
+
     delete.alters_data = True
 
     def safe_method(self):
@@ -86,11 +86,13 @@ class DoNotCallObj:
 
     def compute(self):
         return "computed"
+
     compute.do_not_call_in_templates = True
 
 
 class HtmlObj:
     """Object whose __str__ returns HTML."""
+
     def __init__(self, html):
         self._html = html
 
@@ -106,6 +108,7 @@ class NestedObj:
 # ===========================================================================
 # 1. VARIABLE RESOLUTION
 # ===========================================================================
+
 
 class TestVariableResolution:
     """Test variable lookups: dict keys, object attributes, list indices, callables."""
@@ -217,14 +220,18 @@ class TestVariableResolution:
 
     def test_list_in_loop_with_index(self, stock, cyth):
         """List index access inside a for loop."""
-        _m(stock, cyth,
-           "{% for row in matrix %}{{ row.0 }},{{ row.1 }}|{% endfor %}",
-           {"matrix": [[1, 2], [3, 4], [5, 6]]})
+        _m(
+            stock,
+            cyth,
+            "{% for row in matrix %}{{ row.0 }},{{ row.1 }}|{% endfor %}",
+            {"matrix": [[1, 2], [3, 4], [5, 6]]},
+        )
 
 
 # ===========================================================================
 # 2. IF TAG — comprehensive operator coverage
 # ===========================================================================
+
 
 class TestIfTag:
     """Test {% if %} with all operators and edge cases."""
@@ -240,14 +247,20 @@ class TestIfTag:
         _m(stock, cyth, "{% if x %}yes{% else %}no{% endif %}", {"x": False})
 
     def test_if_elif_else(self, stock, cyth):
-        _m(stock, cyth,
-           "{% if a %}A{% elif b %}B{% elif c %}C{% else %}D{% endif %}",
-           {"a": False, "b": False, "c": True})
+        _m(
+            stock,
+            cyth,
+            "{% if a %}A{% elif b %}B{% elif c %}C{% else %}D{% endif %}",
+            {"a": False, "b": False, "c": True},
+        )
 
     def test_if_multiple_elif(self, stock, cyth):
-        _m(stock, cyth,
-           "{% if a %}A{% elif b %}B{% elif c %}C{% elif d %}D{% else %}E{% endif %}",
-           {"a": False, "b": False, "c": False, "d": True})
+        _m(
+            stock,
+            cyth,
+            "{% if a %}A{% elif b %}B{% elif c %}C{% elif d %}D{% else %}E{% endif %}",
+            {"a": False, "b": False, "c": False, "d": True},
+        )
 
     # --- Comparison operators ---
     def test_if_eq(self, stock, cyth):
@@ -276,20 +289,16 @@ class TestIfTag:
 
     # --- Logical operators ---
     def test_if_and(self, stock, cyth):
-        _m(stock, cyth, "{% if a and b %}yes{% else %}no{% endif %}",
-           {"a": True, "b": True})
+        _m(stock, cyth, "{% if a and b %}yes{% else %}no{% endif %}", {"a": True, "b": True})
 
     def test_if_and_false(self, stock, cyth):
-        _m(stock, cyth, "{% if a and b %}yes{% else %}no{% endif %}",
-           {"a": True, "b": False})
+        _m(stock, cyth, "{% if a and b %}yes{% else %}no{% endif %}", {"a": True, "b": False})
 
     def test_if_or(self, stock, cyth):
-        _m(stock, cyth, "{% if a or b %}yes{% else %}no{% endif %}",
-           {"a": False, "b": True})
+        _m(stock, cyth, "{% if a or b %}yes{% else %}no{% endif %}", {"a": False, "b": True})
 
     def test_if_or_both_false(self, stock, cyth):
-        _m(stock, cyth, "{% if a or b %}yes{% else %}no{% endif %}",
-           {"a": False, "b": False})
+        _m(stock, cyth, "{% if a or b %}yes{% else %}no{% endif %}", {"a": False, "b": False})
 
     def test_if_not(self, stock, cyth):
         _m(stock, cyth, "{% if not x %}yes{% else %}no{% endif %}", {"x": False})
@@ -299,33 +308,26 @@ class TestIfTag:
 
     def test_if_and_or_precedence(self, stock, cyth):
         """and binds tighter than or: a or b and c == a or (b and c)"""
-        _m(stock, cyth, "{% if a or b and c %}yes{% else %}no{% endif %}",
-           {"a": False, "b": True, "c": False})
+        _m(stock, cyth, "{% if a or b and c %}yes{% else %}no{% endif %}", {"a": False, "b": True, "c": False})
 
     def test_if_complex_logic(self, stock, cyth):
-        _m(stock, cyth,
-           "{% if a and b or c %}yes{% else %}no{% endif %}",
-           {"a": True, "b": False, "c": True})
+        _m(stock, cyth, "{% if a and b or c %}yes{% else %}no{% endif %}", {"a": True, "b": False, "c": True})
 
     # --- Membership operators ---
     def test_if_in(self, stock, cyth):
-        _m(stock, cyth, '{% if "a" in items %}yes{% else %}no{% endif %}',
-           {"items": ["a", "b", "c"]})
+        _m(stock, cyth, '{% if "a" in items %}yes{% else %}no{% endif %}', {"items": ["a", "b", "c"]})
 
     def test_if_in_false(self, stock, cyth):
-        _m(stock, cyth, '{% if "z" in items %}yes{% else %}no{% endif %}',
-           {"items": ["a", "b", "c"]})
+        _m(stock, cyth, '{% if "z" in items %}yes{% else %}no{% endif %}', {"items": ["a", "b", "c"]})
 
     def test_if_not_in(self, stock, cyth):
-        _m(stock, cyth, '{% if "z" not in items %}yes{% else %}no{% endif %}',
-           {"items": ["a", "b", "c"]})
+        _m(stock, cyth, '{% if "z" not in items %}yes{% else %}no{% endif %}', {"items": ["a", "b", "c"]})
 
     def test_if_in_string(self, stock, cyth):
         _m(stock, cyth, '{% if "ell" in word %}yes{% endif %}', {"word": "hello"})
 
     def test_if_in_dict(self, stock, cyth):
-        _m(stock, cyth, '{% if "key" in d %}yes{% endif %}',
-           {"d": {"key": "val"}})
+        _m(stock, cyth, '{% if "key" in d %}yes{% endif %}', {"d": {"key": "val"}})
 
     # --- Identity operators ---
     def test_if_is_none(self, stock, cyth):
@@ -342,17 +344,13 @@ class TestIfTag:
 
     # --- Filters in conditions ---
     def test_if_length(self, stock, cyth):
-        _m(stock, cyth, "{% if items|length > 2 %}many{% else %}few{% endif %}",
-           {"items": [1, 2, 3]})
+        _m(stock, cyth, "{% if items|length > 2 %}many{% else %}few{% endif %}", {"items": [1, 2, 3]})
 
     def test_if_length_zero(self, stock, cyth):
-        _m(stock, cyth, "{% if items|length %}has{% else %}empty{% endif %}",
-           {"items": []})
+        _m(stock, cyth, "{% if items|length %}has{% else %}empty{% endif %}", {"items": []})
 
     def test_if_default(self, stock, cyth):
-        _m(stock, cyth,
-           "{% if val|default:'fallback' %}{{ val|default:'fallback' }}{% endif %}",
-           {})
+        _m(stock, cyth, "{% if val|default:'fallback' %}{{ val|default:'fallback' }}{% endif %}", {})
 
     # --- Undefined variables ---
     def test_if_undefined(self, stock, cyth):
@@ -377,209 +375,218 @@ class TestIfTag:
 
     # --- If inside for loop (interacts with LOOPIF optimization) ---
     def test_if_in_loop_attr_eq(self, stock, cyth):
-        _m(stock, cyth,
-           "{% for item in items %}{% if item.x == 1 %}Y{% else %}N{% endif %}{% endfor %}",
-           {"items": [{"x": 1}, {"x": 2}, {"x": 1}]})
+        _m(
+            stock,
+            cyth,
+            "{% for item in items %}{% if item.x == 1 %}Y{% else %}N{% endif %}{% endfor %}",
+            {"items": [{"x": 1}, {"x": 2}, {"x": 1}]},
+        )
 
     def test_if_in_loop_and_or(self, stock, cyth):
-        _m(stock, cyth,
-           "{% for item in items %}"
-           "{% if item.a and item.b %}AB{% elif item.a or item.b %}A|B{% else %}-{% endif %}"
-           "{% endfor %}",
-           {"items": [
-               {"a": True, "b": True},
-               {"a": True, "b": False},
-               {"a": False, "b": False},
-           ]})
+        _m(
+            stock,
+            cyth,
+            "{% for item in items %}"
+            "{% if item.a and item.b %}AB{% elif item.a or item.b %}A|B{% else %}-{% endif %}"
+            "{% endfor %}",
+            {
+                "items": [
+                    {"a": True, "b": True},
+                    {"a": True, "b": False},
+                    {"a": False, "b": False},
+                ]
+            },
+        )
 
 
 # ===========================================================================
 # 3. FOR TAG — comprehensive
 # ===========================================================================
 
+
 class TestForTag:
     """Test {% for %} with unpacking, parentloop, reversed, empty, etc."""
 
     def test_basic(self, stock, cyth):
-        _m(stock, cyth, "{% for x in items %}{{ x }}{% endfor %}",
-           {"items": ["a", "b", "c"]})
+        _m(stock, cyth, "{% for x in items %}{{ x }}{% endfor %}", {"items": ["a", "b", "c"]})
 
     def test_reversed(self, stock, cyth):
-        _m(stock, cyth, "{% for x in items reversed %}{{ x }}{% endfor %}",
-           {"items": [1, 2, 3]})
+        _m(stock, cyth, "{% for x in items reversed %}{{ x }}{% endfor %}", {"items": [1, 2, 3]})
 
     def test_empty(self, stock, cyth):
-        _m(stock, cyth, "{% for x in items %}{{ x }}{% empty %}none{% endfor %}",
-           {"items": []})
+        _m(stock, cyth, "{% for x in items %}{{ x }}{% empty %}none{% endfor %}", {"items": []})
 
     def test_reversed_empty(self, stock, cyth):
         """reversed + empty together."""
-        _m(stock, cyth,
-           "{% for x in items reversed %}{{ x }}{% empty %}none{% endfor %}",
-           {"items": []})
+        _m(stock, cyth, "{% for x in items reversed %}{{ x }}{% empty %}none{% endfor %}", {"items": []})
 
     def test_reversed_with_items(self, stock, cyth):
-        _m(stock, cyth,
-           "{% for x in items reversed %}{{ x }}{% empty %}none{% endfor %}",
-           {"items": [1, 2, 3]})
+        _m(stock, cyth, "{% for x in items reversed %}{{ x }}{% empty %}none{% endfor %}", {"items": [1, 2, 3]})
 
     def test_tuple_unpacking(self, stock, cyth):
-        _m(stock, cyth,
-           "{% for key, val in items %}{{ key }}={{ val }} {% endfor %}",
-           {"items": [("a", 1), ("b", 2), ("c", 3)]})
+        _m(
+            stock,
+            cyth,
+            "{% for key, val in items %}{{ key }}={{ val }} {% endfor %}",
+            {"items": [("a", 1), ("b", 2), ("c", 3)]},
+        )
 
     def test_tuple_unpacking_3(self, stock, cyth):
         """3-variable unpacking."""
-        _m(stock, cyth,
-           "{% for a, b, c in items %}{{ a }}.{{ b }}.{{ c }}|{% endfor %}",
-           {"items": [(1, 2, 3), (4, 5, 6)]})
+        _m(
+            stock,
+            cyth,
+            "{% for a, b, c in items %}{{ a }}.{{ b }}.{{ c }}|{% endfor %}",
+            {"items": [(1, 2, 3), (4, 5, 6)]},
+        )
 
     def test_forloop_counter(self, stock, cyth):
-        _m(stock, cyth,
-           "{% for x in items %}{{ forloop.counter }}{% endfor %}",
-           {"items": "abcde"})
+        _m(stock, cyth, "{% for x in items %}{{ forloop.counter }}{% endfor %}", {"items": "abcde"})
 
     def test_forloop_counter0(self, stock, cyth):
-        _m(stock, cyth,
-           "{% for x in items %}{{ forloop.counter0 }}{% endfor %}",
-           {"items": "abcde"})
+        _m(stock, cyth, "{% for x in items %}{{ forloop.counter0 }}{% endfor %}", {"items": "abcde"})
 
     def test_forloop_revcounter(self, stock, cyth):
-        _m(stock, cyth,
-           "{% for x in items %}{{ forloop.revcounter }}{% endfor %}",
-           {"items": "abcde"})
+        _m(stock, cyth, "{% for x in items %}{{ forloop.revcounter }}{% endfor %}", {"items": "abcde"})
 
     def test_forloop_revcounter0(self, stock, cyth):
-        _m(stock, cyth,
-           "{% for x in items %}{{ forloop.revcounter0 }}{% endfor %}",
-           {"items": "abcde"})
+        _m(stock, cyth, "{% for x in items %}{{ forloop.revcounter0 }}{% endfor %}", {"items": "abcde"})
 
     def test_forloop_first(self, stock, cyth):
-        _m(stock, cyth,
-           "{% for x in items %}{% if forloop.first %}F{% endif %}{{ x }}{% endfor %}",
-           {"items": ["a", "b", "c"]})
+        _m(
+            stock,
+            cyth,
+            "{% for x in items %}{% if forloop.first %}F{% endif %}{{ x }}{% endfor %}",
+            {"items": ["a", "b", "c"]},
+        )
 
     def test_forloop_last(self, stock, cyth):
-        _m(stock, cyth,
-           "{% for x in items %}{{ x }}{% if forloop.last %}L{% endif %}{% endfor %}",
-           {"items": ["a", "b", "c"]})
+        _m(
+            stock,
+            cyth,
+            "{% for x in items %}{{ x }}{% if forloop.last %}L{% endif %}{% endfor %}",
+            {"items": ["a", "b", "c"]},
+        )
 
     def test_forloop_first_and_last_single(self, stock, cyth):
         """Single-element list: both first and last are True."""
-        _m(stock, cyth,
-           "{% for x in items %}"
-           "{% if forloop.first %}F{% endif %}"
-           "{% if forloop.last %}L{% endif %}"
-           "{{ x }}"
-           "{% endfor %}",
-           {"items": ["only"]})
+        _m(
+            stock,
+            cyth,
+            "{% for x in items %}"
+            "{% if forloop.first %}F{% endif %}"
+            "{% if forloop.last %}L{% endif %}"
+            "{{ x }}"
+            "{% endfor %}",
+            {"items": ["only"]},
+        )
 
     def test_forloop_parentloop(self, stock, cyth):
         """Nested loops with forloop.parentloop."""
-        _m(stock, cyth,
-           "{% for outer in outers %}"
-           "{% for inner in inners %}"
-           "{{ forloop.parentloop.counter }}.{{ forloop.counter }} "
-           "{% endfor %}"
-           "{% endfor %}",
-           {"outers": ["a", "b"], "inners": [1, 2, 3]})
+        _m(
+            stock,
+            cyth,
+            "{% for outer in outers %}"
+            "{% for inner in inners %}"
+            "{{ forloop.parentloop.counter }}.{{ forloop.counter }} "
+            "{% endfor %}"
+            "{% endfor %}",
+            {"outers": ["a", "b"], "inners": [1, 2, 3]},
+        )
 
     def test_nested_loops(self, stock, cyth):
-        _m(stock, cyth,
-           "{% for group in groups %}"
-           "[{% for item in group %}{{ item }}{% endfor %}]"
-           "{% endfor %}",
-           {"groups": [[1, 2], [3], [4, 5, 6]]})
+        _m(
+            stock,
+            cyth,
+            "{% for group in groups %}[{% for item in group %}{{ item }}{% endfor %}]{% endfor %}",
+            {"groups": [[1, 2], [3], [4, 5, 6]]},
+        )
 
     def test_for_string(self, stock, cyth):
         """Iterating over a string."""
-        _m(stock, cyth, "{% for c in word %}{{ c }}-{% endfor %}",
-           {"word": "hello"})
+        _m(stock, cyth, "{% for c in word %}{{ c }}-{% endfor %}", {"word": "hello"})
 
     def test_for_dict(self, stock, cyth):
         """Iterating over a dict iterates keys."""
-        result = _m(stock, cyth,
-                     "{% for k in d %}{{ k }}{% endfor %}",
-                     {"d": {"a": 1}})
+        result = _m(stock, cyth, "{% for k in d %}{{ k }}{% endfor %}", {"d": {"a": 1}})
         assert "a" in result
 
     def test_undefined_iterable(self, stock, cyth):
-        _m(stock, cyth,
-           "{% for x in missing %}{{ x }}{% empty %}empty{% endfor %}", {})
+        _m(stock, cyth, "{% for x in missing %}{{ x }}{% empty %}empty{% endfor %}", {})
 
     def test_for_with_cycle(self, stock, cyth):
-        _m(stock, cyth,
-           "{% for x in items %}{% cycle 'odd' 'even' %}:{{ x }} {% endfor %}",
-           {"items": [1, 2, 3, 4, 5]})
+        _m(stock, cyth, "{% for x in items %}{% cycle 'odd' 'even' %}:{{ x }} {% endfor %}", {"items": [1, 2, 3, 4, 5]})
 
     def test_for_with_if_forloop(self, stock, cyth):
         """Combined forloop.first/last with if — tests LOOPIF_CONST interaction."""
-        _m(stock, cyth,
-           "{% for x in items %}"
-           "{% if forloop.first %}<first>{% endif %}"
-           "{{ x }}"
-           "{% if forloop.last %}<last>{% endif %}"
-           "{% endfor %}",
-           {"items": ["a", "b", "c"]})
+        _m(
+            stock,
+            cyth,
+            "{% for x in items %}"
+            "{% if forloop.first %}<first>{% endif %}"
+            "{{ x }}"
+            "{% if forloop.last %}<last>{% endif %}"
+            "{% endfor %}",
+            {"items": ["a", "b", "c"]},
+        )
 
 
 # ===========================================================================
 # 4. CYCLE TAG
 # ===========================================================================
 
+
 class TestCycleTag:
     def test_basic(self, stock, cyth):
-        _m(stock, cyth,
-           "{% for x in items %}{% cycle 'a' 'b' 'c' %}{% endfor %}",
-           {"items": range(7)})
+        _m(stock, cyth, "{% for x in items %}{% cycle 'a' 'b' 'c' %}{% endfor %}", {"items": range(7)})
 
     def test_named(self, stock, cyth):
-        _m(stock, cyth,
-           "{% for x in items %}{% cycle 'odd' 'even' as cls %}{{ cls }}:{{ x }} {% endfor %}",
-           {"items": [1, 2, 3, 4]})
+        _m(
+            stock,
+            cyth,
+            "{% for x in items %}{% cycle 'odd' 'even' as cls %}{{ cls }}:{{ x }} {% endfor %}",
+            {"items": [1, 2, 3, 4]},
+        )
 
     def test_variable_values(self, stock, cyth):
-        _m(stock, cyth,
-           "{% for x in items %}{% cycle a b %}{% endfor %}",
-           {"items": range(4), "a": "X", "b": "Y"})
+        _m(stock, cyth, "{% for x in items %}{% cycle a b %}{% endfor %}", {"items": range(4), "a": "X", "b": "Y"})
 
     def test_silent(self, stock, cyth):
-        _m(stock, cyth,
-           "{% for x in items %}{% cycle 'a' 'b' as val silent %}[{{ val }}]{% endfor %}",
-           {"items": range(4)})
+        _m(
+            stock,
+            cyth,
+            "{% for x in items %}{% cycle 'a' 'b' as val silent %}[{{ val }}]{% endfor %}",
+            {"items": range(4)},
+        )
 
 
 # ===========================================================================
 # 5. WITH TAG
 # ===========================================================================
 
+
 class TestWithTag:
     def test_basic(self, stock, cyth):
         _m(stock, cyth, "{% with x='hello' %}{{ x }}{% endwith %}", {})
 
     def test_multiple_assignments(self, stock, cyth):
-        _m(stock, cyth,
-           "{% with a=1 b=2 c=3 %}{{ a }}.{{ b }}.{{ c }}{% endwith %}", {})
+        _m(stock, cyth, "{% with a=1 b=2 c=3 %}{{ a }}.{{ b }}.{{ c }}{% endwith %}", {})
 
     def test_variable_value(self, stock, cyth):
-        _m(stock, cyth,
-           "{% with full=user.name %}{{ full }}{% endwith %}",
-           {"user": {"name": "Alice"}})
+        _m(stock, cyth, "{% with full=user.name %}{{ full }}{% endwith %}", {"user": {"name": "Alice"}})
 
     def test_scoping(self, stock, cyth):
         """Variable should not leak outside with block."""
-        _m(stock, cyth,
-           "[{% with x='inside' %}{{ x }}{% endwith %}][{{ x }}]", {})
+        _m(stock, cyth, "[{% with x='inside' %}{{ x }}{% endwith %}][{{ x }}]", {})
 
     def test_with_filter(self, stock, cyth):
-        _m(stock, cyth,
-           "{% with upper_name=name|upper %}{{ upper_name }}{% endwith %}",
-           {"name": "alice"})
+        _m(stock, cyth, "{% with upper_name=name|upper %}{{ upper_name }}{% endwith %}", {"name": "alice"})
 
 
 # ===========================================================================
 # 6. COMMENT TAG
 # ===========================================================================
+
 
 class TestCommentTag:
     def test_block_comment(self, stock, cyth):
@@ -590,40 +597,36 @@ class TestCommentTag:
 
     def test_comment_with_tags(self, stock, cyth):
         """Template tags inside comments should be ignored."""
-        _m(stock, cyth,
-           "{% comment %}{% if True %}not rendered{% endif %}{% endcomment %}ok", {})
+        _m(stock, cyth, "{% comment %}{% if True %}not rendered{% endif %}{% endcomment %}ok", {})
 
     def test_comment_with_variables(self, stock, cyth):
-        _m(stock, cyth,
-           "{% comment %}{{ secret }}{% endcomment %}visible", {"secret": "hidden"})
+        _m(stock, cyth, "{% comment %}{{ secret }}{% endcomment %}visible", {"secret": "hidden"})
 
     def test_multiline_comment(self, stock, cyth):
-        _m(stock, cyth,
-           "before{% comment %}\nline 1\nline 2\n{% endcomment %}after", {})
+        _m(stock, cyth, "before{% comment %}\nline 1\nline 2\n{% endcomment %}after", {})
 
 
 # ===========================================================================
 # 7. SPACELESS TAG
 # ===========================================================================
 
+
 class TestSpacelessTag:
     def test_basic(self, stock, cyth):
-        _m(stock, cyth,
-           "{% spaceless %}<p> <a>link</a> </p>{% endspaceless %}", {})
+        _m(stock, cyth, "{% spaceless %}<p> <a>link</a> </p>{% endspaceless %}", {})
 
     def test_preserves_text_whitespace(self, stock, cyth):
         """Whitespace inside text nodes is preserved."""
-        _m(stock, cyth,
-           "{% spaceless %}<p>hello world</p>{% endspaceless %}", {})
+        _m(stock, cyth, "{% spaceless %}<p>hello world</p>{% endspaceless %}", {})
 
     def test_nested_tags(self, stock, cyth):
-        _m(stock, cyth,
-           "{% spaceless %}<div> <p> <span>x</span> </p> </div>{% endspaceless %}", {})
+        _m(stock, cyth, "{% spaceless %}<div> <p> <span>x</span> </p> </div>{% endspaceless %}", {})
 
 
 # ===========================================================================
 # 8. FIRSTOF TAG
 # ===========================================================================
+
 
 class TestFirstofTag:
     def test_first_truthy(self, stock, cyth):
@@ -640,8 +643,7 @@ class TestFirstofTag:
         assert result == ""
 
     def test_as_variable(self, stock, cyth):
-        _m(stock, cyth, '{% firstof a b as val %}[{{ val }}]',
-           {"a": "", "b": "found"})
+        _m(stock, cyth, "{% firstof a b as val %}[{{ val }}]", {"a": "", "b": "found"})
 
     def test_autoescape(self, stock, cyth):
         _m(stock, cyth, "{% firstof val %}", {"val": "<b>bold</b>"})
@@ -651,22 +653,22 @@ class TestFirstofTag:
 # 9. VERBATIM TAG
 # ===========================================================================
 
+
 class TestVerbatimTag:
     def test_basic(self, stock, cyth):
         _m(stock, cyth, "{% verbatim %}{{ not_rendered }}{% endverbatim %}", {})
 
     def test_with_tags(self, stock, cyth):
-        _m(stock, cyth,
-           "{% verbatim %}{% if True %}raw{% endif %}{% endverbatim %}", {})
+        _m(stock, cyth, "{% verbatim %}{% if True %}raw{% endif %}{% endverbatim %}", {})
 
     def test_named(self, stock, cyth):
-        _m(stock, cyth,
-           "{% verbatim myblock %}{{ raw }}{% endverbatim myblock %}", {})
+        _m(stock, cyth, "{% verbatim myblock %}{{ raw }}{% endverbatim myblock %}", {})
 
 
 # ===========================================================================
 # 10. TEMPLATETAG
 # ===========================================================================
+
 
 class TestTemplatetagTag:
     def test_openblock(self, stock, cyth):
@@ -698,6 +700,7 @@ class TestTemplatetagTag:
 # 11. NOW TAG
 # ===========================================================================
 
+
 class TestNowTag:
     def test_year(self, stock, cyth):
         _m(stock, cyth, '{% now "Y" %}', {})
@@ -713,23 +716,27 @@ class TestNowTag:
 # 12. WIDTHRATIO TAG
 # ===========================================================================
 
+
 class TestWidthratioTag:
     def test_basic(self, stock, cyth):
-        _m(stock, cyth, "{% widthratio this_val max_val max_width %}",
-           {"this_val": 175, "max_val": 200, "max_width": 100})
+        _m(
+            stock,
+            cyth,
+            "{% widthratio this_val max_val max_width %}",
+            {"this_val": 175, "max_val": 200, "max_width": 100},
+        )
 
     def test_zero(self, stock, cyth):
         _m(stock, cyth, "{% widthratio 0 100 100 %}", {})
 
     def test_as_variable(self, stock, cyth):
-        _m(stock, cyth,
-           "{% widthratio this_val max_val 100 as ratio %}[{{ ratio }}]",
-           {"this_val": 50, "max_val": 100})
+        _m(stock, cyth, "{% widthratio this_val max_val 100 as ratio %}[{{ ratio }}]", {"this_val": 50, "max_val": 100})
 
 
 # ===========================================================================
 # 13. FILTER TAG
 # ===========================================================================
+
 
 class TestFilterTag:
     def test_upper(self, stock, cyth):
@@ -742,77 +749,99 @@ class TestFilterTag:
         _m(stock, cyth, '{% filter cut:" " %}hello world{% endfilter %}', {})
 
     def test_with_variable(self, stock, cyth):
-        _m(stock, cyth, "{% filter upper %}{{ name }}{% endfilter %}",
-           {"name": "alice"})
+        _m(stock, cyth, "{% filter upper %}{{ name }}{% endfilter %}", {"name": "alice"})
 
 
 # ===========================================================================
 # 14. IFCHANGED TAG
 # ===========================================================================
 
+
 class TestIfchangedTag:
     def test_basic(self, stock, cyth):
-        _m(stock, cyth,
-           "{% for x in items %}{% ifchanged %}{{ x }}{% endifchanged %}{% endfor %}",
-           {"items": [1, 1, 2, 2, 3]})
+        _m(
+            stock,
+            cyth,
+            "{% for x in items %}{% ifchanged %}{{ x }}{% endifchanged %}{% endfor %}",
+            {"items": [1, 1, 2, 2, 3]},
+        )
 
     def test_with_else(self, stock, cyth):
-        _m(stock, cyth,
-           "{% for x in items %}{% ifchanged %}{{ x }}{% else %}.{% endifchanged %}{% endfor %}",
-           {"items": [1, 1, 2, 2, 3]})
+        _m(
+            stock,
+            cyth,
+            "{% for x in items %}{% ifchanged %}{{ x }}{% else %}.{% endifchanged %}{% endfor %}",
+            {"items": [1, 1, 2, 2, 3]},
+        )
 
     def test_parameter(self, stock, cyth):
-        _m(stock, cyth,
-           "{% for item in items %}{% ifchanged item.group %}[{{ item.group }}]{% endifchanged %}{{ item.name }}{% endfor %}",
-           {"items": [
-               {"group": "A", "name": "a1"},
-               {"group": "A", "name": "a2"},
-               {"group": "B", "name": "b1"},
-           ]})
+        _m(
+            stock,
+            cyth,
+            "{% for item in items %}{% ifchanged item.group %}[{{ item.group }}]{% endifchanged %}{{ item.name }}{% endfor %}",
+            {
+                "items": [
+                    {"group": "A", "name": "a1"},
+                    {"group": "A", "name": "a2"},
+                    {"group": "B", "name": "b1"},
+                ]
+            },
+        )
 
 
 # ===========================================================================
 # 15. REGROUP TAG
 # ===========================================================================
 
+
 class TestRegroupTag:
     def test_basic(self, stock, cyth):
-        _m(stock, cyth,
-           "{% regroup items by category as grouped %}"
-           "{% for group in grouped %}"
-           "{{ group.grouper }}:{% for item in group.list %}{{ item.name }}{% endfor %}|"
-           "{% endfor %}",
-           {"items": [
-               {"name": "a", "category": "X"},
-               {"name": "b", "category": "Y"},
-               {"name": "c", "category": "X"},
-               {"name": "d", "category": "Y"},
-           ]})
+        _m(
+            stock,
+            cyth,
+            "{% regroup items by category as grouped %}"
+            "{% for group in grouped %}"
+            "{{ group.grouper }}:{% for item in group.list %}{{ item.name }}{% endfor %}|"
+            "{% endfor %}",
+            {
+                "items": [
+                    {"name": "a", "category": "X"},
+                    {"name": "b", "category": "Y"},
+                    {"name": "c", "category": "X"},
+                    {"name": "d", "category": "Y"},
+                ]
+            },
+        )
 
 
 # ===========================================================================
 # 16. RESETCYCLE TAG
 # ===========================================================================
 
+
 class TestResetcycleTag:
     def test_basic(self, stock, cyth):
-        _m(stock, cyth,
-           "{% for x in items %}"
-           "{% cycle 'a' 'b' 'c' as cls %}"
-           "{% if forloop.last %}{% resetcycle cls %}{% endif %}"
-           "{{ cls }}"
-           "{% endfor %}"
-           "|"
-           "{% for x in items2 %}"
-           "{% cycle 'a' 'b' 'c' as cls %}"
-           "{{ cls }}"
-           "{% endfor %}",
-           {"items": [1, 2], "items2": [1, 2, 3]})
+        _m(
+            stock,
+            cyth,
+            "{% for x in items %}"
+            "{% cycle 'a' 'b' 'c' as cls %}"
+            "{% if forloop.last %}{% resetcycle cls %}{% endif %}"
+            "{{ cls }}"
+            "{% endfor %}"
+            "|"
+            "{% for x in items2 %}"
+            "{% cycle 'a' 'b' 'c' as cls %}"
+            "{{ cls }}"
+            "{% endfor %}",
+            {"items": [1, 2], "items2": [1, 2, 3]},
+        )
 
 
 # ===========================================================================
 # 17. AUTOESCAPE & FILTER CHAINING SAFETY
 # ===========================================================================
+
 
 class TestAutoescapeAndSafety:
     """Test filter chaining safety propagation — modeled after Django's test_chaining.py."""
@@ -821,16 +850,15 @@ class TestAutoescapeAndSafety:
         _m(stock, cyth, "{{ val }}", {"val": "<b>bold</b>"})
 
     def test_autoescape_off(self, stock, cyth):
-        _m(stock, cyth,
-           "{% autoescape off %}{{ val }}{% endautoescape %}",
-           {"val": "<b>bold</b>"})
+        _m(stock, cyth, "{% autoescape off %}{{ val }}{% endautoescape %}", {"val": "<b>bold</b>"})
 
     def test_autoescape_nested(self, stock, cyth):
-        _m(stock, cyth,
-           "{% autoescape off %}{{ val }}"
-           "{% autoescape on %}{{ val }}{% endautoescape %}"
-           "{{ val }}{% endautoescape %}",
-           {"val": "<b>x</b>"})
+        _m(
+            stock,
+            cyth,
+            "{% autoescape off %}{{ val }}{% autoescape on %}{{ val }}{% endautoescape %}{{ val }}{% endautoescape %}",
+            {"val": "<b>x</b>"},
+        )
 
     def test_safe_filter(self, stock, cyth):
         _m(stock, cyth, "{{ val|safe }}", {"val": "<b>bold</b>"})
@@ -843,8 +871,7 @@ class TestAutoescapeAndSafety:
 
     def test_force_escape_double(self, stock, cyth):
         """force_escape always escapes, even already-safe strings."""
-        _m(stock, cyth, "{{ val|force_escape }}",
-           {"val": SafeString("<b>bold</b>")})
+        _m(stock, cyth, "{{ val|force_escape }}", {"val": SafeString("<b>bold</b>")})
 
     def test_safe_then_force_escape(self, stock, cyth):
         """force_escape overrides safe filter."""
@@ -867,17 +894,16 @@ class TestAutoescapeAndSafety:
 
     def test_html_entities(self, stock, cyth):
         """All 5 HTML special characters should be escaped."""
-        _m(stock, cyth, "{{ val }}", {"val": '<>&"\''})
+        _m(stock, cyth, "{{ val }}", {"val": "<>&\"'"})
 
     def test_filter_in_autoescape_off(self, stock, cyth):
-        _m(stock, cyth,
-           "{% autoescape off %}{{ val|upper }}{% endautoescape %}",
-           {"val": "<b>test</b>"})
+        _m(stock, cyth, "{% autoescape off %}{{ val|upper }}{% endautoescape %}", {"val": "<b>test</b>"})
 
 
 # ===========================================================================
 # 18. TEMPLATE INHERITANCE
 # ===========================================================================
+
 
 class TestTemplateInheritance:
     """Test extends/block/block.super with file-based templates."""
@@ -909,39 +935,43 @@ class TestTemplateInheritance:
 # 19. INCLUDE TAG
 # ===========================================================================
 
+
 class TestIncludeTag:
     def test_basic(self, stock, cyth):
         _m(stock, cyth, '{% include "include_target.html" %}', {"message": "hi"})
 
     def test_with_clause(self, stock, cyth):
-        _m(stock, cyth,
-           '{% include "include_target.html" with message="hello" %}', {})
+        _m(stock, cyth, '{% include "include_target.html" with message="hello" %}', {})
 
     def test_only(self, stock, cyth):
         """only keyword restricts context to with vars."""
-        _m(stock, cyth,
-           '{% include "include_context.html" with greeting="Hi" name="Bob" only %}',
-           {"greeting": "ignored", "name": "ignored", "extra": "ignored"})
+        _m(
+            stock,
+            cyth,
+            '{% include "include_context.html" with greeting="Hi" name="Bob" only %}',
+            {"greeting": "ignored", "name": "ignored", "extra": "ignored"},
+        )
 
     def test_dynamic_name(self, stock, cyth):
-        _m(stock, cyth, '{% include tpl %}',
-           {"tpl": "include_target.html", "message": "dynamic"})
+        _m(stock, cyth, "{% include tpl %}", {"tpl": "include_target.html", "message": "dynamic"})
 
     def test_include_in_loop(self, stock, cyth):
-        _m(stock, cyth,
-           '{% for msg in messages %}{% include "include_target.html" with message=msg %}{% endfor %}',
-           {"messages": ["one", "two", "three"]})
+        _m(
+            stock,
+            cyth,
+            '{% for msg in messages %}{% include "include_target.html" with message=msg %}{% endfor %}',
+            {"messages": ["one", "two", "three"]},
+        )
 
     def test_nested_include(self, stock, cyth):
         """Include a template that itself uses variables from context."""
-        _m(stock, cyth,
-           '{% include "include_simple.html" %}',
-           {"item_name": "Widget", "item_value": "42"})
+        _m(stock, cyth, '{% include "include_simple.html" %}', {"item_name": "Widget", "item_value": "42"})
 
 
 # ===========================================================================
 # 20. BUILT-IN FILTERS — comprehensive coverage
 # ===========================================================================
+
 
 class TestFilterAdd:
     def test_integers(self, stock, cyth):
@@ -969,7 +999,7 @@ class TestFilterAddslashes:
         _m(stock, cyth, "{{ val|addslashes }}", {"val": "I'm happy"})
 
     def test_backslash(self, stock, cyth):
-        _m(stock, cyth, "{{ val|addslashes }}", {"val": 'path\\to\\file'})
+        _m(stock, cyth, "{{ val|addslashes }}", {"val": "path\\to\\file"})
 
 
 class TestFilterCapfirst:
@@ -1117,8 +1147,7 @@ class TestFilterForceEscape:
         _m(stock, cyth, "{{ val|force_escape }}", {"val": "<b>bold</b>"})
 
     def test_already_safe(self, stock, cyth):
-        _m(stock, cyth, "{{ val|force_escape }}",
-           {"val": SafeString("<b>bold</b>")})
+        _m(stock, cyth, "{{ val|force_escape }}", {"val": SafeString("<b>bold</b>")})
 
 
 class TestFilterJoin:
@@ -1127,24 +1156,19 @@ class TestFilterJoin:
 
     def test_html(self, stock, cyth):
         """HTML in items should be escaped."""
-        _m(stock, cyth, '{{ items|join:", " }}',
-           {"items": ["<b>a</b>", "b&c"]})
+        _m(stock, cyth, '{{ items|join:", " }}', {"items": ["<b>a</b>", "b&c"]})
 
     def test_autoescape_off(self, stock, cyth):
-        _m(stock, cyth,
-           '{% autoescape off %}{{ items|join:", " }}{% endautoescape %}',
-           {"items": ["<b>a</b>", "b"]})
+        _m(stock, cyth, '{% autoescape off %}{{ items|join:", " }}{% endautoescape %}', {"items": ["<b>a</b>", "b"]})
 
 
 class TestFilterJsonScript:
     def test_basic(self, stock, cyth):
-        _m(stock, cyth, '{{ val|json_script:"data" }}',
-           {"val": {"key": "value", "num": 42}})
+        _m(stock, cyth, '{{ val|json_script:"data" }}', {"val": {"key": "value", "num": 42}})
 
     def test_xss(self, stock, cyth):
         """JSON script should prevent XSS."""
-        _m(stock, cyth, '{{ val|json_script:"data" }}',
-           {"val": "</script><script>alert('xss')</script>"})
+        _m(stock, cyth, '{{ val|json_script:"data" }}', {"val": "</script><script>alert('xss')</script>"})
 
 
 class TestFilterLast:
@@ -1197,12 +1221,10 @@ class TestFilterPluralize:
         _m(stock, cyth, "{{ count }} item{{ count|pluralize }}", {"count": 3})
 
     def test_custom_suffix(self, stock, cyth):
-        _m(stock, cyth, '{{ count }} cherr{{ count|pluralize:"y,ies" }}',
-           {"count": 2})
+        _m(stock, cyth, '{{ count }} cherr{{ count|pluralize:"y,ies" }}', {"count": 2})
 
     def test_custom_suffix_single(self, stock, cyth):
-        _m(stock, cyth, '{{ count }} cherr{{ count|pluralize:"y,ies" }}',
-           {"count": 1})
+        _m(stock, cyth, '{{ count }} cherr{{ count|pluralize:"y,ies" }}', {"count": 1})
 
 
 class TestFilterSafe:
@@ -1272,19 +1294,18 @@ class TestFilterTitle:
 
 class TestFilterTruncatechars:
     def test_basic(self, stock, cyth):
-        _m(stock, cyth, '{{ val|truncatechars:10 }}', {"val": "Hello World, how are you?"})
+        _m(stock, cyth, "{{ val|truncatechars:10 }}", {"val": "Hello World, how are you?"})
 
     def test_short(self, stock, cyth):
-        _m(stock, cyth, '{{ val|truncatechars:100 }}', {"val": "short"})
+        _m(stock, cyth, "{{ val|truncatechars:100 }}", {"val": "short"})
 
 
 class TestFilterTruncatewords:
     def test_basic(self, stock, cyth):
-        _m(stock, cyth, '{{ val|truncatewords:3 }}',
-           {"val": "one two three four five"})
+        _m(stock, cyth, "{{ val|truncatewords:3 }}", {"val": "one two three four five"})
 
     def test_exact(self, stock, cyth):
-        _m(stock, cyth, '{{ val|truncatewords:3 }}', {"val": "one two three"})
+        _m(stock, cyth, "{{ val|truncatewords:3 }}", {"val": "one two three"})
 
 
 class TestFilterUpper:
@@ -1304,8 +1325,7 @@ class TestFilterWordcount:
 
 class TestFilterWordwrap:
     def test_basic(self, stock, cyth):
-        _m(stock, cyth, '{{ val|wordwrap:10 }}',
-           {"val": "this is a long sentence that should be wrapped"})
+        _m(stock, cyth, "{{ val|wordwrap:10 }}", {"val": "this is a long sentence that should be wrapped"})
 
 
 class TestFilterYesno:
@@ -1329,15 +1349,13 @@ class TestFilterChaining:
         _m(stock, cyth, "{{ val|lower|capfirst }}", {"val": "HELLO WORLD"})
 
     def test_upper_truncatewords(self, stock, cyth):
-        _m(stock, cyth, '{{ val|upper|truncatewords:2 }}',
-           {"val": "hello world foo"})
+        _m(stock, cyth, "{{ val|upper|truncatewords:2 }}", {"val": "hello world foo"})
 
     def test_default_lower(self, stock, cyth):
         _m(stock, cyth, "{{ val|default:'N/A'|lower }}", {})
 
     def test_triple_chain(self, stock, cyth):
-        _m(stock, cyth, '{{ val|cut:" "|lower|capfirst }}',
-           {"val": "HELLO WORLD"})
+        _m(stock, cyth, '{{ val|cut:" "|lower|capfirst }}', {"val": "HELLO WORLD"})
 
     def test_filter_with_variable_arg(self, stock, cyth):
         _m(stock, cyth, "{{ val|add:other }}", {"val": 10, "other": 5})
@@ -1346,6 +1364,7 @@ class TestFilterChaining:
 # ===========================================================================
 # 21. BUILTINS — True, False, None literals
 # ===========================================================================
+
 
 class TestBuiltins:
     def test_true(self, stock, cyth):
@@ -1362,62 +1381,76 @@ class TestBuiltins:
 # 22. MIXED / REALISTIC EDGE CASES
 # ===========================================================================
 
+
 class TestMixedEdgeCases:
     """Test combinations of features that interact with our optimizations."""
 
     def test_loop_with_objects(self, stock, cyth):
         """Object attributes in a for loop — tests LOOPATTR with real objects."""
         items = [SimpleObj(name="Alice", age=30), SimpleObj(name="Bob", age=25)]
-        _m(stock, cyth,
-           "{% for item in items %}{{ item.name }}({{ item.age }}){% endfor %}",
-           {"items": items})
+        _m(stock, cyth, "{% for item in items %}{{ item.name }}({{ item.age }}){% endfor %}", {"items": items})
 
     def test_loop_with_callables(self, stock, cyth):
         """Callable methods in a for loop."""
         items = [CallableObj("hello"), CallableObj("world")]
-        _m(stock, cyth,
-           "{% for item in items %}{{ item.get_value }}|{% endfor %}",
-           {"items": items})
+        _m(stock, cyth, "{% for item in items %}{{ item.get_value }}|{% endfor %}", {"items": items})
 
     def test_loop_with_index(self, stock, cyth):
         """List index access in loop body."""
-        _m(stock, cyth,
-           "{% for row in rows %}{{ row.0 }}:{{ row.1 }}|{% endfor %}",
-           {"rows": [["a", 1], ["b", 2], ["c", 3]]})
+        _m(
+            stock,
+            cyth,
+            "{% for row in rows %}{{ row.0 }}:{{ row.1 }}|{% endfor %}",
+            {"rows": [["a", 1], ["b", 2], ["c", 3]]},
+        )
 
     def test_loop_with_filter_and_if(self, stock, cyth):
-        _m(stock, cyth,
-           "{% for item in items %}"
-           "{% if item.active %}{{ item.name|upper }}{% endif %}"
-           "{% endfor %}",
-           {"items": [
-               {"name": "alice", "active": True},
-               {"name": "bob", "active": False},
-               {"name": "carol", "active": True},
-           ]})
+        _m(
+            stock,
+            cyth,
+            "{% for item in items %}{% if item.active %}{{ item.name|upper }}{% endif %}{% endfor %}",
+            {
+                "items": [
+                    {"name": "alice", "active": True},
+                    {"name": "bob", "active": False},
+                    {"name": "carol", "active": True},
+                ]
+            },
+        )
 
     def test_nested_loops_with_parentloop(self, stock, cyth):
-        _m(stock, cyth,
-           "{% for group in groups %}"
-           "[{% for item in group.items %}"
-           "{{ forloop.parentloop.counter }}.{{ forloop.counter }}={{ item }} "
-           "{% endfor %}]"
-           "{% endfor %}",
-           {"groups": [
-               {"items": ["a", "b"]},
-               {"items": ["c"]},
-               {"items": ["d", "e", "f"]},
-           ]})
+        _m(
+            stock,
+            cyth,
+            "{% for group in groups %}"
+            "[{% for item in group.items %}"
+            "{{ forloop.parentloop.counter }}.{{ forloop.counter }}={{ item }} "
+            "{% endfor %}]"
+            "{% endfor %}",
+            {
+                "groups": [
+                    {"items": ["a", "b"]},
+                    {"items": ["c"]},
+                    {"items": ["d", "e", "f"]},
+                ]
+            },
+        )
 
     def test_include_in_loop(self, stock, cyth):
-        _m(stock, cyth,
-           '{% for msg in messages %}{% include "include_target.html" with message=msg %}{% endfor %}',
-           {"messages": ["one", "two"]})
+        _m(
+            stock,
+            cyth,
+            '{% for msg in messages %}{% include "include_target.html" with message=msg %}{% endfor %}',
+            {"messages": ["one", "two"]},
+        )
 
     def test_cycle_with_filter(self, stock, cyth):
-        _m(stock, cyth,
-           "{% for x in items %}{% cycle 'ODD' 'EVEN' as cls %}{{ cls|lower }} {% endfor %}",
-           {"items": range(4)})
+        _m(
+            stock,
+            cyth,
+            "{% for x in items %}{% cycle 'ODD' 'EVEN' as cls %}{{ cls|lower }} {% endfor %}",
+            {"items": range(4)},
+        )
 
     def test_multiline_template(self, stock, cyth):
         template = """<html>
@@ -1427,8 +1460,7 @@ class TestMixedEdgeCases:
 {% endfor %}
 </body>
 </html>"""
-        _m(stock, cyth, template,
-           {"items": [{"name": "a", "value": 1}, {"name": "b", "value": 2}]})
+        _m(stock, cyth, template, {"items": [{"name": "a", "value": 1}, {"name": "b", "value": 2}]})
 
     def test_empty_template(self, stock, cyth):
         _m(stock, cyth, "", {})
@@ -1440,9 +1472,7 @@ class TestMixedEdgeCases:
         _m(stock, cyth, "{{ val }}", {"val": "Hello 世界 🌍"})
 
     def test_unicode_in_loop(self, stock, cyth):
-        _m(stock, cyth,
-           "{% for item in items %}{{ item }}|{% endfor %}",
-           {"items": ["café", "naïve", "日本語"]})
+        _m(stock, cyth, "{% for item in items %}{{ item }}|{% endfor %}", {"items": ["café", "naïve", "日本語"]})
 
     def test_many_variables(self, stock, cyth):
         """Template with many variable substitutions."""
@@ -1451,27 +1481,26 @@ class TestMixedEdgeCases:
         _m(stock, cyth, tmpl, ctx)
 
     def test_deeply_nested_dicts(self, stock, cyth):
-        _m(stock, cyth, "{{ a.b.c.d.e }}",
-           {"a": {"b": {"c": {"d": {"e": "deep"}}}}})
+        _m(stock, cyth, "{{ a.b.c.d.e }}", {"a": {"b": {"c": {"d": {"e": "deep"}}}}})
 
     def test_boolean_in_if_and_render(self, stock, cyth):
         """Boolean should work in both if conditions and variable rendering."""
-        _m(stock, cyth,
-           "{% if flag %}flag={{ flag }}{% endif %}",
-           {"flag": True})
+        _m(stock, cyth, "{% if flag %}flag={{ flag }}{% endif %}", {"flag": True})
 
     def test_integer_comparison_in_loop(self, stock, cyth):
         """Numeric comparison inside a loop — tests LOOPIF."""
-        _m(stock, cyth,
-           "{% for item in items %}"
-           "{% if item.score >= 80 %}pass{% else %}fail{% endif %} "
-           "{% endfor %}",
-           {"items": [{"score": 90}, {"score": 50}, {"score": 80}]})
+        _m(
+            stock,
+            cyth,
+            "{% for item in items %}{% if item.score >= 80 %}pass{% else %}fail{% endif %} {% endfor %}",
+            {"items": [{"score": 90}, {"score": 50}, {"score": 80}]},
+        )
 
 
 # ---------------------------------------------------------------------------
 # Production edge case tests — correctness in LOOPATTR/LOOPIF hot paths
 # ---------------------------------------------------------------------------
+
 
 class TestLoopEdgeCases:
     """Tests for edge cases in the optimized ForNode loop paths.
@@ -1482,72 +1511,100 @@ class TestLoopEdgeCases:
 
     def test_dict_missing_key_in_loop(self, stock, cyth):
         """Dict in loop missing an accessed key should silently resolve to empty."""
-        _m(stock, cyth,
-           "{% for item in items %}[{{ item.name }}:{{ item.price }}]{% endfor %}",
-           {"items": [
-               {"name": "a", "price": 10},
-               {"name": "b"},  # missing 'price'
-               {"price": 30},  # missing 'name'
-           ]})
+        _m(
+            stock,
+            cyth,
+            "{% for item in items %}[{{ item.name }}:{{ item.price }}]{% endfor %}",
+            {
+                "items": [
+                    {"name": "a", "price": 10},
+                    {"name": "b"},  # missing 'price'
+                    {"price": 30},  # missing 'name'
+                ]
+            },
+        )
 
     def test_dict_missing_key_in_loop_with_filter(self, stock, cyth):
         """Dict missing key when filter applied — LOOPATTR_FILTER path."""
-        _m(stock, cyth,
-           "{% for item in items %}[{{ item.name|upper }}]{% endfor %}",
-           {"items": [
-               {"name": "hello"},
-               {},  # missing 'name'
-               {"name": "world"},
-           ]})
+        _m(
+            stock,
+            cyth,
+            "{% for item in items %}[{{ item.name|upper }}]{% endfor %}",
+            {
+                "items": [
+                    {"name": "hello"},
+                    {},  # missing 'name'
+                    {"name": "world"},
+                ]
+            },
+        )
 
     def test_loop_if_dict_missing_key(self, stock, cyth):
         """LOOPIF with dict missing the condition key."""
-        _m(stock, cyth,
-           "{% for item in items %}"
-           "{% if item.active %}Y{% else %}N{% endif %}"
-           "{% endfor %}",
-           {"items": [
-               {"active": True},
-               {},  # missing 'active'
-               {"active": False},
-           ]})
+        _m(
+            stock,
+            cyth,
+            "{% for item in items %}{% if item.active %}Y{% else %}N{% endif %}{% endfor %}",
+            {
+                "items": [
+                    {"active": True},
+                    {},  # missing 'active'
+                    {"active": False},
+                ]
+            },
+        )
 
     def test_loop_if_comparison_dict_missing_key(self, stock, cyth):
         """LOOPIF comparison with dict missing the condition key."""
-        _m(stock, cyth,
-           "{% for item in items %}"
-           "{% if item.score == 100 %}perfect{% elif item.score >= 50 %}pass{% else %}fail{% endif %} "
-           "{% endfor %}",
-           {"items": [
-               {"score": 100},
-               {},  # missing 'score'
-               {"score": 50},
-           ]})
+        _m(
+            stock,
+            cyth,
+            "{% for item in items %}"
+            "{% if item.score == 100 %}perfect{% elif item.score >= 50 %}pass{% else %}fail{% endif %} "
+            "{% endfor %}",
+            {
+                "items": [
+                    {"score": 100},
+                    {},  # missing 'score'
+                    {"score": 50},
+                ]
+            },
+        )
 
     def test_loop_if_incompatible_comparison(self, stock, cyth):
         """LOOPIF with incompatible comparison types should not crash."""
-        _m(stock, cyth,
-           "{% for item in items %}"
-           "{% if item.val > 10 %}big{% else %}small{% endif %} "
-           "{% endfor %}",
-           {"items": [
-               {"val": 20},
-               {"val": "not a number"},  # str > int raises TypeError
-               {"val": 5},
-           ]})
+        _m(
+            stock,
+            cyth,
+            "{% for item in items %}{% if item.val > 10 %}big{% else %}small{% endif %} {% endfor %}",
+            {
+                "items": [
+                    {"val": 20},
+                    {"val": "not a number"},  # str > int raises TypeError
+                    {"val": 5},
+                ]
+            },
+        )
 
     def test_loop_objects_missing_attribute(self, stock, cyth):
         """Object in loop missing an accessed attribute — LOOPATTR path."""
+
         class Book:
             def __init__(self, **kwargs):
                 for k, v in kwargs.items():
                     setattr(self, k, v)
-        _m(stock, cyth,
-           "{% for book in books %}[{{ book.title }}:{{ book.price }}]{% endfor %}",
-           {"items": [
-               Book(title="A", price=10),
-               Book(title="B"),  # missing 'price'
-           ]})
+
+        _m(
+            stock,
+            cyth,
+            "{% for book in books %}[{{ book.title }}:{{ book.price }}]{% endfor %}",
+            {
+                "items": [
+                    Book(title="A", price=10),
+                    Book(title="B"),  # missing 'price'
+                ]
+            },
+        )
 
     def test_constant_var_not_cached_with_custom_tag(self, stock, cyth):
         """Constant vars should NOT be cached when custom tags exist in loop body.
@@ -1558,88 +1615,109 @@ class TestLoopEdgeCases:
         # This test uses {% with %} which is a safe tag, but it changes context.
         # The key insight is that {{ greeting }} is NOT the loop var, and
         # its value changes per iteration via the inner {% with %}.
-        _m(stock, cyth,
-           "{% for item in items %}"
-           "{% with greeting=item.msg %}"
-           "{{ greeting }} "
-           "{% endwith %}"
-           "{% endfor %}",
-           {"items": [
-               {"msg": "hello"},
-               {"msg": "world"},
-               {"msg": "foo"},
-           ]})
+        _m(
+            stock,
+            cyth,
+            "{% for item in items %}{% with greeting=item.msg %}{{ greeting }} {% endwith %}{% endfor %}",
+            {
+                "items": [
+                    {"msg": "hello"},
+                    {"msg": "world"},
+                    {"msg": "foo"},
+                ]
+            },
+        )
 
     def test_forloop_counter_in_optimized_loop(self, stock, cyth):
         """forloop.counter/counter0/revcounter/revcounter0 in loop."""
-        _m(stock, cyth,
-           "{% for item in items %}"
-           "{{ forloop.counter }}.{{ forloop.counter0 }}"
-           ".{{ forloop.revcounter }}.{{ forloop.revcounter0 }} "
-           "{% endfor %}",
-           {"items": ["a", "b", "c"]})
+        _m(
+            stock,
+            cyth,
+            "{% for item in items %}"
+            "{{ forloop.counter }}.{{ forloop.counter0 }}"
+            ".{{ forloop.revcounter }}.{{ forloop.revcounter0 }} "
+            "{% endfor %}",
+            {"items": ["a", "b", "c"]},
+        )
 
     def test_loop_cycle_with_if(self, stock, cyth):
         """cycle + if in same loop body — tests LOOPCYCLE + LOOPIF interaction."""
-        _m(stock, cyth,
-           "{% for item in items %}"
-           "{% cycle 'odd' 'even' as cls %}"
-           "{% if item.active %}{{ cls }}:{{ item.name }}{% endif %} "
-           "{% endfor %}",
-           {"items": [
-               {"name": "a", "active": True},
-               {"name": "b", "active": False},
-               {"name": "c", "active": True},
-               {"name": "d", "active": True},
-           ]})
+        _m(
+            stock,
+            cyth,
+            "{% for item in items %}"
+            "{% cycle 'odd' 'even' as cls %}"
+            "{% if item.active %}{{ cls }}:{{ item.name }}{% endif %} "
+            "{% endfor %}",
+            {
+                "items": [
+                    {"name": "a", "active": True},
+                    {"name": "b", "active": False},
+                    {"name": "c", "active": True},
+                    {"name": "d", "active": True},
+                ]
+            },
+        )
 
     def test_mixed_dict_and_object_loop(self, stock, cyth):
         """Loop over mix of dicts and objects — tests type dispatch per item."""
+
         class Obj:
             def __init__(self, name):
                 self.name = name
-        _m(stock, cyth,
-           "{% for item in items %}{{ item.name }} {% endfor %}",
-           {"items": [
-               {"name": "dict1"},
-               Obj("obj1"),
-               {"name": "dict2"},
-           ]})
+
+        _m(
+            stock,
+            cyth,
+            "{% for item in items %}{{ item.name }} {% endfor %}",
+            {
+                "items": [
+                    {"name": "dict1"},
+                    Obj("obj1"),
+                    {"name": "dict2"},
+                ]
+            },
+        )
 
     def test_empty_loop_with_empty_tag(self, stock, cyth):
         """{% empty %} rendered when sequence is empty."""
-        _m(stock, cyth,
-           "{% for item in items %}{{ item }}{% empty %}EMPTY{% endfor %}",
-           {"items": []})
+        _m(stock, cyth, "{% for item in items %}{{ item }}{% empty %}EMPTY{% endfor %}", {"items": []})
 
     def test_loop_none_sequence(self, stock, cyth):
         """Iterating over None should use {% empty %} or produce nothing."""
-        _m(stock, cyth,
-           "{% for item in items %}{{ item }}{% empty %}NONE{% endfor %}",
-           {"items": None})
+        _m(stock, cyth, "{% for item in items %}{{ item }}{% empty %}NONE{% endfor %}", {"items": None})
 
     def test_nested_loop_with_optimized_inner(self, stock, cyth):
         """Nested for loops — inner loop should be independently optimized."""
-        _m(stock, cyth,
-           "{% for row in rows %}"
-           "[{% for cell in row.cells %}{{ cell.val }}{% endfor %}]"
-           "{% endfor %}",
-           {"rows": [
-               {"cells": [{"val": 1}, {"val": 2}]},
-               {"cells": [{"val": 3}]},
-           ]})
+        _m(
+            stock,
+            cyth,
+            "{% for row in rows %}[{% for cell in row.cells %}{{ cell.val }}{% endfor %}]{% endfor %}",
+            {
+                "rows": [
+                    {"cells": [{"val": 1}, {"val": 2}]},
+                    {"cells": [{"val": 3}]},
+                ]
+            },
+        )
 
     def test_loop_tuple_unpacking(self, stock, cyth):
         """Tuple unpacking in for loop."""
-        _m(stock, cyth,
-           "{% for k, v in items %}{{ k }}={{ v }} {% endfor %}",
-           {"items": [("a", 1), ("b", 2), ("c", 3)]})
+        _m(
+            stock,
+            cyth,
+            "{% for k, v in items %}{{ k }}={{ v }} {% endfor %}",
+            {"items": [("a", 1), ("b", 2), ("c", 3)]},
+        )
 
     def test_loop_reversed(self, stock, cyth):
         """Reversed loop iteration."""
-        _m(stock, cyth,
-           "{% for item in items reversed %}{{ item.name }} {% endfor %}",
-           {"items": [{"name": "a"}, {"name": "b"}, {"name": "c"}]})
+        _m(
+            stock,
+            cyth,
+            "{% for item in items reversed %}{{ item.name }} {% endfor %}",
+            {"items": [{"name": "a"}, {"name": "b"}, {"name": "c"}]},
+        )
 
 
 class TestUseThousandSeparator:
@@ -1650,6 +1728,7 @@ class TestUseThousandSeparator:
         """Integer values should be formatted with thousand separators."""
         # Need to reset the cached _use_thousand_sep in formats module.
         import django_templates_cythonized.formats as fmt
+
         old_val = fmt._use_thousand_sep
         fmt._use_thousand_sep = None
         try:
@@ -1661,12 +1740,16 @@ class TestUseThousandSeparator:
     def test_int_with_thousand_separator_in_loop(self, stock, cyth):
         """Integer in LOOPATTR path should respect USE_THOUSAND_SEPARATOR."""
         import django_templates_cythonized.formats as fmt
+
         old_val = fmt._use_thousand_sep
         fmt._use_thousand_sep = None
         try:
-            _m(stock, cyth,
-               "{% for item in items %}{{ item.price }} {% endfor %}",
-               {"items": [{"price": 1234567}, {"price": 42}, {"price": 100000}]})
+            _m(
+                stock,
+                cyth,
+                "{% for item in items %}{{ item.price }} {% endfor %}",
+                {"items": [{"price": 1234567}, {"price": 42}, {"price": 100000}]},
+            )
         finally:
             fmt._use_thousand_sep = old_val
 
@@ -1674,6 +1757,7 @@ class TestUseThousandSeparator:
 # ---------------------------------------------------------------------------
 # Production-readiness tests — critical features, regression tests for bug fixes
 # ---------------------------------------------------------------------------
+
 
 class TestLoopIfConstNestedOperators:
     """Regression tests for LOOPIF_CONST with compound and/or/not conditions.
@@ -1685,47 +1769,48 @@ class TestLoopIfConstNestedOperators:
 
     def test_compound_and_with_loop_var(self, stock, cyth):
         """{% if const_flag and item.attr %} must NOT be treated as constant."""
-        _m(stock, cyth,
-           "{% for item in items %}"
-           "{% if show and item.active %}Y{% else %}N{% endif %}"
-           "{% endfor %}",
-           {"items": [{"active": True}, {"active": False}, {"active": True}],
-            "show": True})
+        _m(
+            stock,
+            cyth,
+            "{% for item in items %}{% if show and item.active %}Y{% else %}N{% endif %}{% endfor %}",
+            {"items": [{"active": True}, {"active": False}, {"active": True}], "show": True},
+        )
 
     def test_compound_or_with_loop_var(self, stock, cyth):
         """{% if const_flag or item.attr %} must NOT be treated as constant."""
-        _m(stock, cyth,
-           "{% for item in items %}"
-           "{% if fallback or item.val %}Y{% else %}N{% endif %}"
-           "{% endfor %}",
-           {"items": [{"val": True}, {"val": False}, {"val": True}],
-            "fallback": False})
+        _m(
+            stock,
+            cyth,
+            "{% for item in items %}{% if fallback or item.val %}Y{% else %}N{% endif %}{% endfor %}",
+            {"items": [{"val": True}, {"val": False}, {"val": True}], "fallback": False},
+        )
 
     def test_not_with_loop_var(self, stock, cyth):
         """{% if not item.attr %} must NOT be treated as constant."""
-        _m(stock, cyth,
-           "{% for item in items %}"
-           "{% if not item.hidden %}visible{% else %}hidden{% endif %} "
-           "{% endfor %}",
-           {"items": [{"hidden": False}, {"hidden": True}, {"hidden": False}]})
+        _m(
+            stock,
+            cyth,
+            "{% for item in items %}{% if not item.hidden %}visible{% else %}hidden{% endif %} {% endfor %}",
+            {"items": [{"hidden": False}, {"hidden": True}, {"hidden": False}]},
+        )
 
     def test_deeply_nested_compound(self, stock, cyth):
         """Compound condition with 3 terms where loop var is deeply nested."""
-        _m(stock, cyth,
-           "{% for item in items %}"
-           "{% if flag1 and flag2 or item.x %}Y{% else %}N{% endif %}"
-           "{% endfor %}",
-           {"items": [{"x": True}, {"x": False}],
-            "flag1": False, "flag2": False})
+        _m(
+            stock,
+            cyth,
+            "{% for item in items %}{% if flag1 and flag2 or item.x %}Y{% else %}N{% endif %}{% endfor %}",
+            {"items": [{"x": True}, {"x": False}], "flag1": False, "flag2": False},
+        )
 
     def test_truly_constant_compound_condition(self, stock, cyth):
         """{% if flag1 and flag2 %} (no loop var) IS correctly treated as constant."""
-        _m(stock, cyth,
-           "{% for item in items %}"
-           "{% if show_all and verbose %}[{{ item.name }}]{% endif %}"
-           "{% endfor %}",
-           {"items": [{"name": "a"}, {"name": "b"}],
-            "show_all": True, "verbose": True})
+        _m(
+            stock,
+            cyth,
+            "{% for item in items %}{% if show_all and verbose %}[{{ item.name }}]{% endif %}{% endfor %}",
+            {"items": [{"name": "a"}, {"name": "b"}], "show_all": True, "verbose": True},
+        )
 
 
 class TestResetCycle:
@@ -1733,27 +1818,32 @@ class TestResetCycle:
 
     def test_resetcycle_resets_cycle_counter(self, stock, cyth):
         """{% resetcycle %} should restart the cycle from the beginning."""
-        _m(stock, cyth,
-           "{% for item in items %}"
-           "{% cycle 'a' 'b' 'c' as cls %}"
-           "{% if item.reset %}{% resetcycle cls %}{% endif %}"
-           "{{ cls }},"
-           "{% endfor %}",
-           {"items": [
-               {"reset": False},
-               {"reset": True},   # resets cycle
-               {"reset": False},  # should restart from 'a'
-               {"reset": False},
-           ]})
+        _m(
+            stock,
+            cyth,
+            "{% for item in items %}"
+            "{% cycle 'a' 'b' 'c' as cls %}"
+            "{% if item.reset %}{% resetcycle cls %}{% endif %}"
+            "{{ cls }},"
+            "{% endfor %}",
+            {
+                "items": [
+                    {"reset": False},
+                    {"reset": True},  # resets cycle
+                    {"reset": False},  # should restart from 'a'
+                    {"reset": False},
+                ]
+            },
+        )
 
     def test_cycle_without_resetcycle_uses_inline(self, stock, cyth):
         """Cycle without resetcycle should still produce correct output."""
-        _m(stock, cyth,
-           "{% for item in items %}"
-           "{% cycle 'odd' 'even' as row %}"
-           "{{ row }}:{{ item }} "
-           "{% endfor %}",
-           {"items": ["a", "b", "c", "d"]})
+        _m(
+            stock,
+            cyth,
+            "{% for item in items %}{% cycle 'odd' 'even' as row %}{{ row }}:{{ item }} {% endfor %}",
+            {"items": ["a", "b", "c", "d"]},
+        )
 
     def test_resetcycle_no_cycles(self, cyth):
         """resetcycle with no cycles should raise TemplateSyntaxError."""
@@ -1773,85 +1863,94 @@ class TestResetCycle:
     def test_resetcycle_undefined_with_named_cycle(self, cyth):
         """resetcycle with undefined name when different named cycle exists."""
         with pytest.raises(TemplateSyntaxError, match="does not exist"):
-            cyth.from_string(
-                "{% cycle 'a' 'b' as ab %}{% resetcycle undefinedcycle %}"
-            )
+            cyth.from_string("{% cycle 'a' 'b' as ab %}{% resetcycle undefinedcycle %}")
 
     def test_resetcycle_simple(self, stock, cyth):
         """Simple unnamed resetcycle resets the cycle each iteration."""
-        _m(stock, cyth,
-           "{% for i in test %}{% cycle 'a' 'b' %}{% resetcycle %}{% endfor %}",
-           {"test": list(range(5))})
+        _m(stock, cyth, "{% for i in test %}{% cycle 'a' 'b' %}{% resetcycle %}{% endfor %}", {"test": list(range(5))})
 
     def test_resetcycle_multiple_cycles(self, stock, cyth):
         """Named cycle from outside loop + unnamed cycle in loop.
         Unnamed resetcycle resets the LAST cycle (unnamed one)."""
-        _m(stock, cyth,
-           "{% cycle 'a' 'b' 'c' as abc %}"
-           "{% for i in test %}"
-           "{% cycle abc %}"
-           "{% cycle '-' '+' %}"
-           "{% resetcycle %}"
-           "{% endfor %}",
-           {"test": list(range(5))})
+        _m(
+            stock,
+            cyth,
+            "{% cycle 'a' 'b' 'c' as abc %}"
+            "{% for i in test %}"
+            "{% cycle abc %}"
+            "{% cycle '-' '+' %}"
+            "{% resetcycle %}"
+            "{% endfor %}",
+            {"test": list(range(5))},
+        )
 
     def test_resetcycle_named_reset(self, stock, cyth):
         """resetcycle with name resets only the named cycle."""
-        _m(stock, cyth,
-           "{% cycle 'a' 'b' 'c' as abc %}"
-           "{% for i in test %}"
-           "{% resetcycle abc %}"
-           "{% cycle abc %}"
-           "{% cycle '-' '+' %}"
-           "{% endfor %}",
-           {"test": list(range(5))})
+        _m(
+            stock,
+            cyth,
+            "{% cycle 'a' 'b' 'c' as abc %}"
+            "{% for i in test %}"
+            "{% resetcycle abc %}"
+            "{% cycle abc %}"
+            "{% cycle '-' '+' %}"
+            "{% endfor %}",
+            {"test": list(range(5))},
+        )
 
     def test_resetcycle_nested_loops(self, stock, cyth):
         """resetcycle in outer loop resets inner loop's cycle."""
-        _m(stock, cyth,
-           "{% for i in outer %}"
-           "{% for j in inner %}"
-           "{% cycle 'a' 'b' %}"
-           "{% endfor %}"
-           "{% resetcycle %}"
-           "{% endfor %}",
-           {"outer": list(range(2)), "inner": list(range(3))})
+        _m(
+            stock,
+            cyth,
+            "{% for i in outer %}{% for j in inner %}{% cycle 'a' 'b' %}{% endfor %}{% resetcycle %}{% endfor %}",
+            {"outer": list(range(2)), "inner": list(range(3))},
+        )
 
     def test_resetcycle_nested_multiple_cycles(self, stock, cyth):
         """Nested loops with multiple cycles and resetcycle."""
-        _m(stock, cyth,
-           "{% for i in outer %}"
-           "{% cycle 'a' 'b' %}"
-           "{% for j in inner %}"
-           "{% cycle 'X' 'Y' %}"
-           "{% endfor %}"
-           "{% resetcycle %}"
-           "{% endfor %}",
-           {"outer": list(range(2)), "inner": list(range(3))})
+        _m(
+            stock,
+            cyth,
+            "{% for i in outer %}"
+            "{% cycle 'a' 'b' %}"
+            "{% for j in inner %}"
+            "{% cycle 'X' 'Y' %}"
+            "{% endfor %}"
+            "{% resetcycle %}"
+            "{% endfor %}",
+            {"outer": list(range(2)), "inner": list(range(3))},
+        )
 
     def test_resetcycle_conditional(self, stock, cyth):
         """Conditional resetcycle on specific named cycle."""
-        _m(stock, cyth,
-           "{% for i in test %}"
-           "{% cycle 'X' 'Y' 'Z' as XYZ %}"
-           "{% cycle 'a' 'b' 'c' as abc %}"
-           "{% if i == 1 %}"
-           "{% resetcycle abc %}"
-           "{% endif %}"
-           "{% endfor %}",
-           {"test": list(range(5))})
+        _m(
+            stock,
+            cyth,
+            "{% for i in test %}"
+            "{% cycle 'X' 'Y' 'Z' as XYZ %}"
+            "{% cycle 'a' 'b' 'c' as abc %}"
+            "{% if i == 1 %}"
+            "{% resetcycle abc %}"
+            "{% endif %}"
+            "{% endfor %}",
+            {"test": list(range(5))},
+        )
 
     def test_resetcycle_conditional_other(self, stock, cyth):
         """Conditional resetcycle on the other named cycle."""
-        _m(stock, cyth,
-           "{% for i in test %}"
-           "{% cycle 'X' 'Y' 'Z' as XYZ %}"
-           "{% cycle 'a' 'b' 'c' as abc %}"
-           "{% if i == 1 %}"
-           "{% resetcycle XYZ %}"
-           "{% endif %}"
-           "{% endfor %}",
-           {"test": list(range(5))})
+        _m(
+            stock,
+            cyth,
+            "{% for i in test %}"
+            "{% cycle 'X' 'Y' 'Z' as XYZ %}"
+            "{% cycle 'a' 'b' 'c' as abc %}"
+            "{% if i == 1 %}"
+            "{% resetcycle XYZ %}"
+            "{% endif %}"
+            "{% endfor %}",
+            {"test": list(range(5))},
+        )
 
 
 class TestRequestContext:
@@ -1877,10 +1976,8 @@ class TestRequestContext:
         request = factory.get("/")
 
         tpl_str = "{% for item in items %}{{ item|upper }} {% endfor %}"
-        stock_result = stock.from_string(tpl_str).render(
-            {"items": ["hello", "world"]}, request=request)
-        cyth_result = cyth.from_string(tpl_str).render(
-            {"items": ["hello", "world"]}, request=request)
+        stock_result = stock.from_string(tpl_str).render({"items": ["hello", "world"]}, request=request)
+        cyth_result = cyth.from_string(tpl_str).render({"items": ["hello", "world"]}, request=request)
 
         assert cyth_result == stock_result
 
@@ -1904,6 +2001,7 @@ class TestUseTZ:
     def test_aware_datetime_rendering(self, stock, cyth):
         """Timezone-aware datetime should render identically with USE_TZ=True."""
         import zoneinfo
+
         tz = zoneinfo.ZoneInfo("UTC")
         dt = datetime.datetime(2024, 6, 15, 14, 30, 0, tzinfo=tz)
         _m(stock, cyth, "{{ dt }}", {"dt": dt})
@@ -1957,14 +2055,11 @@ class TestWithTag:
 
     def test_with_keyword_syntax(self, stock, cyth):
         """{% with x='hello' %} modern syntax."""
-        _m(stock, cyth,
-           "{% with greeting='hello' %}{{ greeting }}{% endwith %}")
+        _m(stock, cyth, "{% with greeting='hello' %}{{ greeting }}{% endwith %}")
 
     def test_with_legacy_syntax(self, stock, cyth):
         """{% with user.name as fullname %} legacy syntax."""
-        _m(stock, cyth,
-           "{% with user.name as fullname %}{{ fullname }}{% endwith %}",
-           {"user": {"name": "Alice"}})
+        _m(stock, cyth, "{% with user.name as fullname %}{{ fullname }}{% endwith %}", {"user": {"name": "Alice"}})
 
 
 class TestFormatHtml:
@@ -1973,18 +2068,21 @@ class TestFormatHtml:
     def test_format_html_empty_args_raises(self):
         """format_html() without args or kwargs should raise TypeError."""
         from django_templates_cythonized.html import format_html
+
         with pytest.raises(TypeError, match="args or kwargs must be provided"):
             format_html("hello")
 
     def test_format_html_with_args(self):
         """format_html() with positional args should escape them."""
         from django_templates_cythonized.html import format_html
+
         result = format_html("<b>{}</b>", "<script>")
         assert "&lt;script&gt;" in result
 
     def test_format_html_with_kwargs(self):
         """format_html() with keyword args should escape them."""
         from django_templates_cythonized.html import format_html
+
         result = format_html("<b>{name}</b>", name="<script>")
         assert "&lt;script&gt;" in result
 
@@ -1994,99 +2092,76 @@ class TestForLoopEdgeCases:
 
     def test_loop_empty_list(self, stock, cyth):
         """Empty list renders empty nodelist."""
-        _m(stock, cyth,
-           "{% for x in items %}{{ x }}{% empty %}EMPTY{% endfor %}",
-           {"items": []})
+        _m(stock, cyth, "{% for x in items %}{{ x }}{% empty %}EMPTY{% endfor %}", {"items": []})
 
     def test_loop_reversed(self, stock, cyth):
         """{% for x in items reversed %} iterates in reverse."""
-        _m(stock, cyth,
-           "{% for x in items reversed %}{{ x }},{% endfor %}",
-           {"items": [1, 2, 3]})
+        _m(stock, cyth, "{% for x in items reversed %}{{ x }},{% endfor %}", {"items": [1, 2, 3]})
 
     def test_loop_nested_parentloop(self, stock, cyth):
         """Nested loops expose parentloop correctly."""
-        _m(stock, cyth,
-           "{% for row in rows %}{% for col in cols %}"
-           "{{ forloop.parentloop.counter }}:{{ forloop.counter }},"
-           "{% endfor %}{% endfor %}",
-           {"rows": ["a", "b"], "cols": [1, 2]})
+        _m(
+            stock,
+            cyth,
+            "{% for row in rows %}{% for col in cols %}"
+            "{{ forloop.parentloop.counter }}:{{ forloop.counter }},"
+            "{% endfor %}{% endfor %}",
+            {"rows": ["a", "b"], "cols": [1, 2]},
+        )
 
     def test_loop_unpack_multiple_vars(self, stock, cyth):
         """{% for k, v in items %} unpacks correctly."""
-        _m(stock, cyth,
-           "{% for k, v in items %}{{ k }}={{ v }},{% endfor %}",
-           {"items": [("a", 1), ("b", 2)]})
+        _m(stock, cyth, "{% for k, v in items %}{{ k }}={{ v }},{% endfor %}", {"items": [("a", 1), ("b", 2)]})
 
     def test_loopattr_object_not_dict(self, stock, cyth):
         """LOOPATTR resolves object attributes (not just dict keys)."""
         items = [SimpleObj(name="Alice"), SimpleObj(name="Bob")]
-        _m(stock, cyth,
-           "{% for item in items %}{{ item.name }},{% endfor %}",
-           {"items": items})
+        _m(stock, cyth, "{% for item in items %}{{ item.name }},{% endfor %}", {"items": items})
 
     def test_loopattr_callable_fallback(self, stock, cyth):
         """LOOPATTR falls back correctly when attr is a callable method."""
         items = [CallableObj("hello"), CallableObj("world")]
-        _m(stock, cyth,
-           "{% for item in items %}{{ item.get_value }},{% endfor %}",
-           {"items": items})
+        _m(stock, cyth, "{% for item in items %}{{ item.get_value }},{% endfor %}", {"items": items})
 
     def test_loopattr_missing_attr(self, stock, cyth):
         """LOOPATTR handles missing attributes gracefully."""
         items = [{"name": "Alice"}, {"age": 30}]
-        _m(stock, cyth,
-           "{% for item in items %}{{ item.name }},{% endfor %}",
-           {"items": items})
+        _m(stock, cyth, "{% for item in items %}{{ item.name }},{% endfor %}", {"items": items})
 
     def test_loopattr_none_value(self, stock, cyth):
         """LOOPATTR handles None attribute values."""
         items = [{"name": None}, {"name": "Bob"}]
-        _m(stock, cyth,
-           "{% for item in items %}{{ item.name }},{% endfor %}",
-           {"items": items})
+        _m(stock, cyth, "{% for item in items %}{{ item.name }},{% endfor %}", {"items": items})
 
     def test_loopattr_html_escape(self, stock, cyth):
         """LOOPATTR escapes HTML in string values."""
         items = [{"name": "<b>Alice</b>"}, {"name": "Bob"}]
-        _m(stock, cyth,
-           "{% for item in items %}{{ item.name }},{% endfor %}",
-           {"items": items})
+        _m(stock, cyth, "{% for item in items %}{{ item.name }},{% endfor %}", {"items": items})
 
     def test_loopattr_safestring(self, stock, cyth):
         """LOOPATTR preserves SafeString values."""
         items = [{"name": mark_safe("<b>Alice</b>")}, {"name": "Bob"}]
-        _m(stock, cyth,
-           "{% for item in items %}{{ item.name }},{% endfor %}",
-           {"items": items})
+        _m(stock, cyth, "{% for item in items %}{{ item.name }},{% endfor %}", {"items": items})
 
     def test_loopattr_float_value(self, stock, cyth):
         """LOOPATTR handles float values correctly."""
         items = [{"price": 19.99}, {"price": 0.5}]
-        _m(stock, cyth,
-           "{% for item in items %}{{ item.price }},{% endfor %}",
-           {"items": items})
+        _m(stock, cyth, "{% for item in items %}{{ item.price }},{% endfor %}", {"items": items})
 
     def test_loopattr_bool_value(self, stock, cyth):
         """LOOPATTR handles bool values (bool is subclass of int)."""
         items = [{"active": True}, {"active": False}]
-        _m(stock, cyth,
-           "{% for item in items %}{{ item.active }},{% endfor %}",
-           {"items": items})
+        _m(stock, cyth, "{% for item in items %}{{ item.active }},{% endfor %}", {"items": items})
 
     def test_loopattr_with_filter(self, stock, cyth):
         """LOOPATTR_FILTER path handles filter application."""
         items = [{"name": "alice"}, {"name": "bob"}]
-        _m(stock, cyth,
-           "{% for item in items %}{{ item.name|upper }},{% endfor %}",
-           {"items": items})
+        _m(stock, cyth, "{% for item in items %}{{ item.name|upper }},{% endfor %}", {"items": items})
 
     def test_loopattr_filter_callable_fallback(self, stock, cyth):
         """LOOPATTR_FILTER falls back when attr is callable."""
         items = [CallableObj("hello"), CallableObj("world")]
-        _m(stock, cyth,
-           "{% for item in items %}{{ item.get_value|upper }},{% endfor %}",
-           {"items": items})
+        _m(stock, cyth, "{% for item in items %}{{ item.get_value|upper }},{% endfor %}", {"items": items})
 
 
 class TestLoopIfEdgeCases:
@@ -2094,105 +2169,116 @@ class TestLoopIfEdgeCases:
 
     def test_loopif_not_operator(self, stock, cyth):
         """{% if not book.attr %} with not prefix operator."""
-        books = [{"title": "A", "out_of_stock": True},
-                 {"title": "B", "out_of_stock": False},
-                 {"title": "C", "out_of_stock": None}]
-        _m(stock, cyth,
-           "{% for book in books %}"
-           "{% if not book.out_of_stock %}{{ book.title }},{% endif %}"
-           "{% endfor %}",
-           {"books": books})
+        books = [
+            {"title": "A", "out_of_stock": True},
+            {"title": "B", "out_of_stock": False},
+            {"title": "C", "out_of_stock": None},
+        ]
+        _m(
+            stock,
+            cyth,
+            "{% for book in books %}{% if not book.out_of_stock %}{{ book.title }},{% endif %}{% endfor %}",
+            {"books": books},
+        )
 
     def test_loopif_boolean_truthiness(self, stock, cyth):
         """LOOPIF simple boolean truthiness test."""
-        books = [{"title": "A", "active": True},
-                 {"title": "B", "active": False},
-                 {"title": "C", "active": ""}]
-        _m(stock, cyth,
-           "{% for book in books %}"
-           "{% if book.active %}{{ book.title }},{% endif %}"
-           "{% endfor %}",
-           {"books": books})
+        books = [{"title": "A", "active": True}, {"title": "B", "active": False}, {"title": "C", "active": ""}]
+        _m(
+            stock,
+            cyth,
+            "{% for book in books %}{% if book.active %}{{ book.title }},{% endif %}{% endfor %}",
+            {"books": books},
+        )
 
     def test_loopif_none_comparison(self, stock, cyth):
         """LOOPIF comparing attribute against None."""
         items = [{"val": None}, {"val": 0}, {"val": ""}]
-        _m(stock, cyth,
-           "{% for item in items %}"
-           "{% if item.val == None %}null,{% else %}val,{% endif %}"
-           "{% endfor %}",
-           {"items": items})
+        _m(
+            stock,
+            cyth,
+            "{% for item in items %}{% if item.val == None %}null,{% else %}val,{% endif %}{% endfor %}",
+            {"items": items},
+        )
 
     def test_loopif_missing_attr(self, stock, cyth):
         """LOOPIF handles missing attributes (should not crash)."""
         items = [{"status": "active"}, {"name": "Bob"}]
-        _m(stock, cyth,
-           "{% for item in items %}"
-           "{% if item.status == 'active' %}yes,{% else %}no,{% endif %}"
-           "{% endfor %}",
-           {"items": items})
+        _m(
+            stock,
+            cyth,
+            "{% for item in items %}{% if item.status == 'active' %}yes,{% else %}no,{% endif %}{% endfor %}",
+            {"items": items},
+        )
 
     def test_loopif_incompatible_types(self, stock, cyth):
         """LOOPIF handles comparison between incompatible types."""
         items = [{"val": "abc"}, {"val": 42}]
-        _m(stock, cyth,
-           "{% for item in items %}"
-           "{% if item.val > 10 %}big,{% else %}small,{% endif %}"
-           "{% endfor %}",
-           {"items": items})
+        _m(
+            stock,
+            cyth,
+            "{% for item in items %}{% if item.val > 10 %}big,{% else %}small,{% endif %}{% endfor %}",
+            {"items": items},
+        )
 
     def test_loopif_const_not_prefix(self, stock, cyth):
         """LOOPIF_CONST with not prefix operator on constant."""
-        _m(stock, cyth,
-           "{% for x in items %}"
-           "{% if not show_all %}{{ x }},{% endif %}"
-           "{% endfor %}",
-           {"items": [1, 2, 3], "show_all": False})
+        _m(
+            stock,
+            cyth,
+            "{% for x in items %}{% if not show_all %}{{ x }},{% endif %}{% endfor %}",
+            {"items": [1, 2, 3], "show_all": False},
+        )
 
     def test_loopif_const_and_operator(self, stock, cyth):
         """LOOPIF_CONST falls back correctly for compound and/or."""
-        _m(stock, cyth,
-           "{% for x in items %}"
-           "{% if flag_a and flag_b %}{{ x }},{% endif %}"
-           "{% endfor %}",
-           {"items": [1, 2, 3], "flag_a": True, "flag_b": True})
+        _m(
+            stock,
+            cyth,
+            "{% for x in items %}{% if flag_a and flag_b %}{{ x }},{% endif %}{% endfor %}",
+            {"items": [1, 2, 3], "flag_a": True, "flag_b": True},
+        )
 
     def test_loopif_const_loop_var_in_compound(self, stock, cyth):
         """Compound condition with loop var should NOT be classified as const."""
         items = [{"val": 1}, {"val": 2}, {"val": 3}]
-        _m(stock, cyth,
-           "{% for item in items %}"
-           "{% if item.val > 1 and flag %}{{ item.val }},{% endif %}"
-           "{% endfor %}",
-           {"items": items, "flag": True})
+        _m(
+            stock,
+            cyth,
+            "{% for item in items %}{% if item.val > 1 and flag %}{{ item.val }},{% endif %}{% endfor %}",
+            {"items": items, "flag": True},
+        )
 
     def test_loopif_multiple_elif(self, stock, cyth):
         """LOOPIF with multiple elif branches."""
-        items = [{"status": "active"}, {"status": "pending"},
-                 {"status": "inactive"}, {"status": "unknown"}]
-        _m(stock, cyth,
-           "{% for item in items %}"
-           "{% if item.status == 'active' %}A,"
-           "{% elif item.status == 'pending' %}P,"
-           "{% elif item.status == 'inactive' %}I,"
-           "{% else %}?,"
-           "{% endif %}"
-           "{% endfor %}",
-           {"items": items})
+        items = [{"status": "active"}, {"status": "pending"}, {"status": "inactive"}, {"status": "unknown"}]
+        _m(
+            stock,
+            cyth,
+            "{% for item in items %}"
+            "{% if item.status == 'active' %}A,"
+            "{% elif item.status == 'pending' %}P,"
+            "{% elif item.status == 'inactive' %}I,"
+            "{% else %}?,"
+            "{% endif %}"
+            "{% endfor %}",
+            {"items": items},
+        )
 
     def test_loopif_different_attrs_per_branch(self, stock, cyth):
         """LOOPIF with different attributes in each condition branch."""
-        items = [{"price": 100, "qty": 5},
-                 {"price": 50, "qty": 0},
-                 {"price": 200, "qty": 10}]
-        _m(stock, cyth,
-           "{% for item in items %}"
-           "{% if item.price > 99 %}expensive,"
-           "{% elif item.qty == 0 %}oos,"
-           "{% else %}ok,"
-           "{% endif %}"
-           "{% endfor %}",
-           {"items": items})
+        items = [{"price": 100, "qty": 5}, {"price": 50, "qty": 0}, {"price": 200, "qty": 10}]
+        _m(
+            stock,
+            cyth,
+            "{% for item in items %}"
+            "{% if item.price > 99 %}expensive,"
+            "{% elif item.qty == 0 %}oos,"
+            "{% else %}ok,"
+            "{% endif %}"
+            "{% endfor %}",
+            {"items": items},
+        )
 
 
 class TestForloopCounterEdgeCases:
@@ -2200,46 +2286,42 @@ class TestForloopCounterEdgeCases:
 
     def test_forloop_counter(self, stock, cyth):
         """{{ forloop.counter }} starts at 1."""
-        _m(stock, cyth,
-           "{% for x in items %}{{ forloop.counter }},{% endfor %}",
-           {"items": "abc"})
+        _m(stock, cyth, "{% for x in items %}{{ forloop.counter }},{% endfor %}", {"items": "abc"})
 
     def test_forloop_counter0(self, stock, cyth):
         """{{ forloop.counter0 }} starts at 0."""
-        _m(stock, cyth,
-           "{% for x in items %}{{ forloop.counter0 }},{% endfor %}",
-           {"items": "abc"})
+        _m(stock, cyth, "{% for x in items %}{{ forloop.counter0 }},{% endfor %}", {"items": "abc"})
 
     def test_forloop_revcounter(self, stock, cyth):
         """{{ forloop.revcounter }} counts down to 1."""
-        _m(stock, cyth,
-           "{% for x in items %}{{ forloop.revcounter }},{% endfor %}",
-           {"items": "abc"})
+        _m(stock, cyth, "{% for x in items %}{{ forloop.revcounter }},{% endfor %}", {"items": "abc"})
 
     def test_forloop_revcounter0(self, stock, cyth):
         """{{ forloop.revcounter0 }} counts down to 0."""
-        _m(stock, cyth,
-           "{% for x in items %}{{ forloop.revcounter0 }},{% endfor %}",
-           {"items": "abc"})
+        _m(stock, cyth, "{% for x in items %}{{ forloop.revcounter0 }},{% endfor %}", {"items": "abc"})
 
     def test_forloop_first_last(self, stock, cyth):
         """{{ forloop.first }} and {{ forloop.last }} work correctly."""
-        _m(stock, cyth,
-           "{% for x in items %}"
-           "{% if forloop.first %}[{% endif %}"
-           "{{ x }}"
-           "{% if forloop.last %}]{% endif %}"
-           "{% if not forloop.last %},{% endif %}"
-           "{% endfor %}",
-           {"items": [1, 2, 3]})
+        _m(
+            stock,
+            cyth,
+            "{% for x in items %}"
+            "{% if forloop.first %}[{% endif %}"
+            "{{ x }}"
+            "{% if forloop.last %}]{% endif %}"
+            "{% if not forloop.last %},{% endif %}"
+            "{% endfor %}",
+            {"items": [1, 2, 3]},
+        )
 
     def test_forloop_single_item(self, stock, cyth):
         """Single-item loop: first and last both True."""
-        _m(stock, cyth,
-           "{% for x in items %}"
-           "{{ forloop.counter }},{{ forloop.first }},{{ forloop.last }}"
-           "{% endfor %}",
-           {"items": [42]})
+        _m(
+            stock,
+            cyth,
+            "{% for x in items %}{{ forloop.counter }},{{ forloop.first }},{{ forloop.last }}{% endfor %}",
+            {"items": [42]},
+        )
 
 
 class TestLoopCycleEdgeCases:
@@ -2247,27 +2329,25 @@ class TestLoopCycleEdgeCases:
 
     def test_cycle_basic(self, stock, cyth):
         """Basic cycle in a loop."""
-        _m(stock, cyth,
-           "{% for x in items %}{% cycle 'a' 'b' 'c' %},{% endfor %}",
-           {"items": [1, 2, 3, 4, 5]})
+        _m(stock, cyth, "{% for x in items %}{% cycle 'a' 'b' 'c' %},{% endfor %}", {"items": [1, 2, 3, 4, 5]})
 
     def test_cycle_as_variable(self, stock, cyth):
         """{% cycle ... as var %} sets variable in context."""
-        _m(stock, cyth,
-           "{% for x in items %}"
-           "{% cycle 'odd' 'even' as rowclass %}"
-           "{{ rowclass }}-{{ x }},"
-           "{% endfor %}",
-           {"items": [1, 2, 3, 4]})
+        _m(
+            stock,
+            cyth,
+            "{% for x in items %}{% cycle 'odd' 'even' as rowclass %}{{ rowclass }}-{{ x }},{% endfor %}",
+            {"items": [1, 2, 3, 4]},
+        )
 
     def test_cycle_silent(self, stock, cyth):
         """{% cycle ... as var silent %} does not output."""
-        _m(stock, cyth,
-           "{% for x in items %}"
-           "{% cycle 'a' 'b' as cls silent %}"
-           "[{{ cls }}]"
-           "{% endfor %}",
-           {"items": [1, 2, 3]})
+        _m(
+            stock,
+            cyth,
+            "{% for x in items %}{% cycle 'a' 'b' as cls silent %}[{{ cls }}]{% endfor %}",
+            {"items": [1, 2, 3]},
+        )
 
 
 class TestConstVarCacheEdgeCases:
@@ -2275,202 +2355,207 @@ class TestConstVarCacheEdgeCases:
 
     def test_const_var_cached(self, stock, cyth):
         """Constant variable (not referencing loop var) renders correctly."""
-        _m(stock, cyth,
-           "{% for x in items %}{{ prefix }}-{{ x }},{% endfor %}",
-           {"items": [1, 2, 3], "prefix": "item"})
+        _m(stock, cyth, "{% for x in items %}{{ prefix }}-{{ x }},{% endfor %}", {"items": [1, 2, 3], "prefix": "item"})
 
     def test_const_var_with_cycle_variable(self, stock, cyth):
         """Constant var is NOT cached when cycle writes to same name."""
-        _m(stock, cyth,
-           "{% for x in items %}"
-           "{% cycle 'a' 'b' as rowclass %}"
-           "{{ rowclass }}-{{ x }},"
-           "{% endfor %}",
-           {"items": [1, 2, 3, 4]})
+        _m(
+            stock,
+            cyth,
+            "{% for x in items %}{% cycle 'a' 'b' as rowclass %}{{ rowclass }}-{{ x }},{% endfor %}",
+            {"items": [1, 2, 3, 4]},
+        )
 
     def test_const_var_deep_lookup(self, stock, cyth):
         """Constant var with multi-segment lookup (e.g. settings.name)."""
-        _m(stock, cyth,
-           "{% for x in items %}{{ config.prefix }}-{{ x }},{% endfor %}",
-           {"items": [1, 2, 3], "config": {"prefix": "v"}})
+        _m(
+            stock,
+            cyth,
+            "{% for x in items %}{{ config.prefix }}-{{ x }},{% endfor %}",
+            {"items": [1, 2, 3], "config": {"prefix": "v"}},
+        )
 
     def test_const_var_with_custom_tag_present(self, stock, cyth):
         """Constant var caching disabled when non-standard nodes present."""
-        _m(stock, cyth,
-           "{% load custom_tags %}"
-           "{% for x in items %}"
-           "{% greeting 'World' %}"
-           "{{ currency }}-{{ x }},"
-           "{% endfor %}",
-           {"items": [1, 2, 3], "currency": "USD"})
+        _m(
+            stock,
+            cyth,
+            "{% load custom_tags %}{% for x in items %}{% greeting 'World' %}{{ currency }}-{{ x }},{% endfor %}",
+            {"items": [1, 2, 3], "currency": "USD"},
+        )
 
 
 # ---------------------------------------------------------------------------
 # Include flattening tests
 # ---------------------------------------------------------------------------
 
+
 class TestIncludeFlattening:
     """Tests for compile-time include flattening."""
 
     def test_simple_include_flattened(self, stock, cyth):
         """Basic include produces same output after flattening."""
-        _m(stock, cyth,
-           '{% include "flat_outer.html" %}',
-           {"inner_val": "hello"})
+        _m(stock, cyth, '{% include "flat_outer.html" %}', {"inner_val": "hello"})
 
     def test_chained_includes_flattened(self, stock, cyth):
         """A -> B -> C include chain produces correct output."""
-        _m(stock, cyth,
-           '{% include "flat_chain_a.html" %}',
-           {"c_val": "deep"})
+        _m(stock, cyth, '{% include "flat_chain_a.html" %}', {"c_val": "deep"})
 
     def test_include_in_for_loop(self, stock, cyth):
         """Include inside for loop produces same output."""
-        _m(stock, cyth,
-           '{% for item in items %}{% include "flat_inner.html" %}{% endfor %}',
-           {"items": [{"inner_val": "a"}, {"inner_val": "b"}],
-            "inner_val": "fallback"})
+        _m(
+            stock,
+            cyth,
+            '{% for item in items %}{% include "flat_inner.html" %}{% endfor %}',
+            {"items": [{"inner_val": "a"}, {"inner_val": "b"}], "inner_val": "fallback"},
+        )
 
     def test_include_with_extra_context_not_flattened(self, stock, cyth):
         """Include with extra context is NOT flattened but still works."""
-        _m(stock, cyth,
-           '{% include "include_target.html" with message="hi" %}',
-           {})
+        _m(stock, cyth, '{% include "include_target.html" with message="hi" %}', {})
 
     def test_include_with_isolated_context_not_flattened(self, stock, cyth):
         """Include with only keyword is NOT flattened but still works."""
-        _m(stock, cyth,
-           '{% include "include_target.html" with message="hi" only %}',
-           {"message": "should_not_appear"})
+        _m(stock, cyth, '{% include "include_target.html" with message="hi" only %}', {"message": "should_not_appear"})
 
     def test_include_variable_template_not_flattened(self, stock, cyth):
         """Include with variable template name is NOT flattened."""
-        _m(stock, cyth,
-           '{% include tpl_name %}',
-           {"tpl_name": "include_target.html", "message": "dynamic"})
+        _m(stock, cyth, "{% include tpl_name %}", {"tpl_name": "include_target.html", "message": "dynamic"})
 
     def test_include_in_if_branch(self, stock, cyth):
         """Include inside an if branch is correctly flattened."""
-        _m(stock, cyth,
-           '{% if show %}{% include "flat_inner.html" %}{% endif %}',
-           {"show": True, "inner_val": "visible"})
+        _m(
+            stock,
+            cyth,
+            '{% if show %}{% include "flat_inner.html" %}{% endif %}',
+            {"show": True, "inner_val": "visible"},
+        )
 
     def test_include_in_if_branch_false(self, stock, cyth):
         """Include in if branch that's not taken still renders correctly."""
-        _m(stock, cyth,
-           '{% if show %}{% include "flat_inner.html" %}{% else %}none{% endif %}',
-           {"show": False, "inner_val": "invisible"})
+        _m(
+            stock,
+            cyth,
+            '{% if show %}{% include "flat_inner.html" %}{% else %}none{% endif %}',
+            {"show": False, "inner_val": "invisible"},
+        )
 
 
 # ---------------------------------------------------------------------------
 # LOOPIF is/is not operator tests
 # ---------------------------------------------------------------------------
 
+
 class TestLoopIfIsOperators:
     """Tests for is/is not operators in LOOPIF-classified for loops."""
 
     def test_is_true(self, stock, cyth):
         """{% if item.flag is True %} inside a for loop."""
-        _m(stock, cyth,
-           "{% for item in items %}"
-           "{% if item.flag is True %}T{% else %}F{% endif %}"
-           "{% endfor %}",
-           {"items": [{"flag": True}, {"flag": False}, {"flag": None}, {"flag": 1}]})
+        _m(
+            stock,
+            cyth,
+            "{% for item in items %}{% if item.flag is True %}T{% else %}F{% endif %}{% endfor %}",
+            {"items": [{"flag": True}, {"flag": False}, {"flag": None}, {"flag": 1}]},
+        )
 
     def test_is_false(self, stock, cyth):
         """{% if item.flag is False %} inside a for loop."""
-        _m(stock, cyth,
-           "{% for item in items %}"
-           "{% if item.flag is False %}F{% else %}T{% endif %}"
-           "{% endfor %}",
-           {"items": [{"flag": True}, {"flag": False}, {"flag": None}, {"flag": 0}]})
+        _m(
+            stock,
+            cyth,
+            "{% for item in items %}{% if item.flag is False %}F{% else %}T{% endif %}{% endfor %}",
+            {"items": [{"flag": True}, {"flag": False}, {"flag": None}, {"flag": 0}]},
+        )
 
     def test_is_none(self, stock, cyth):
         """{% if item.val is None %} inside a for loop."""
-        _m(stock, cyth,
-           "{% for item in items %}"
-           "{% if item.val is None %}N{% else %}V{% endif %}"
-           "{% endfor %}",
-           {"items": [{"val": None}, {"val": ""}, {"val": 0}, {"val": "x"}]})
+        _m(
+            stock,
+            cyth,
+            "{% for item in items %}{% if item.val is None %}N{% else %}V{% endif %}{% endfor %}",
+            {"items": [{"val": None}, {"val": ""}, {"val": 0}, {"val": "x"}]},
+        )
 
     def test_is_not_false(self, stock, cyth):
         """{% if item.val is not False %} — the attrs.html pattern."""
-        _m(stock, cyth,
-           "{% for item in items %}"
-           "{% if item.val is not False %}[{{ item.val }}]{% endif %}"
-           "{% endfor %}",
-           {"items": [{"val": "a"}, {"val": False}, {"val": True}, {"val": ""}]})
+        _m(
+            stock,
+            cyth,
+            "{% for item in items %}{% if item.val is not False %}[{{ item.val }}]{% endif %}{% endfor %}",
+            {"items": [{"val": "a"}, {"val": False}, {"val": True}, {"val": ""}]},
+        )
 
     def test_is_not_true(self, stock, cyth):
         """{% if item.val is not True %} — the attrs.html value display."""
-        _m(stock, cyth,
-           "{% for item in items %}"
-           "{% if item.val is not True %}={{ item.val }}{% else %}!{% endif %}"
-           "{% endfor %}",
-           {"items": [{"val": "a"}, {"val": True}, {"val": False}, {"val": 42}]})
+        _m(
+            stock,
+            cyth,
+            "{% for item in items %}{% if item.val is not True %}={{ item.val }}{% else %}!{% endif %}{% endfor %}",
+            {"items": [{"val": "a"}, {"val": True}, {"val": False}, {"val": 42}]},
+        )
 
     def test_is_not_none(self, stock, cyth):
         """{% if item.val is not None %} inside a for loop."""
-        _m(stock, cyth,
-           "{% for item in items %}"
-           "{% if item.val is not None %}[{{ item.val }}]{% endif %}"
-           "{% endfor %}",
-           {"items": [{"val": "a"}, {"val": None}, {"val": 0}, {"val": ""}]})
+        _m(
+            stock,
+            cyth,
+            "{% for item in items %}{% if item.val is not None %}[{{ item.val }}]{% endif %}{% endfor %}",
+            {"items": [{"val": "a"}, {"val": None}, {"val": 0}, {"val": ""}]},
+        )
 
     def test_attrs_pattern(self, stock, cyth):
         """Full attrs.html pattern: is not False + is not True combo."""
-        _m(stock, cyth,
-           "{% for name, value in attrs.items %}"
-           "{% if value is not False %} {{ name }}"
-           "{% if value is not True %}=\"{{ value }}\"{% endif %}"
-           "{% endif %}"
-           "{% endfor %}",
-           {"attrs": {"class": "form-control", "required": True,
-                      "disabled": False, "id": "my-input"}})
+        _m(
+            stock,
+            cyth,
+            "{% for name, value in attrs.items %}"
+            "{% if value is not False %} {{ name }}"
+            '{% if value is not True %}="{{ value }}"{% endif %}'
+            "{% endif %}"
+            "{% endfor %}",
+            {"attrs": {"class": "form-control", "required": True, "disabled": False, "id": "my-input"}},
+        )
 
     def test_is_identity_not_equality(self, stock, cyth):
         """is checks identity, not equality. 0 is not False, '' is not False."""
-        _m(stock, cyth,
-           "{% for item in items %}"
-           "{% if item.v is False %}F{% else %}NF{% endif %}"
-           "{% endfor %}",
-           {"items": [{"v": False}, {"v": 0}, {"v": ""}, {"v": None}]})
+        _m(
+            stock,
+            cyth,
+            "{% for item in items %}{% if item.v is False %}F{% else %}NF{% endif %}{% endfor %}",
+            {"items": [{"v": False}, {"v": 0}, {"v": ""}, {"v": None}]},
+        )
 
 
 # ---------------------------------------------------------------------------
 # Context operations (from Django's test_context.py)
 # ---------------------------------------------------------------------------
 
+
 class TestContextOperations:
     """Tests for Context push/pop/set_upward/flatten/new/update."""
 
     def test_push_pop(self, stock, cyth):
-        _m(stock, cyth,
-           "{% with x=1 %}{{ x }}{% endwith %}{{ x }}",
-           {"x": "outer"})
+        _m(stock, cyth, "{% with x=1 %}{{ x }}{% endwith %}{{ x }}", {"x": "outer"})
 
     def test_nested_push(self, stock, cyth):
-        _m(stock, cyth,
-           "{% with x=1 %}{% with x=2 %}{{ x }}{% endwith %}{{ x }}{% endwith %}",
-           {})
+        _m(stock, cyth, "{% with x=1 %}{% with x=2 %}{{ x }}{% endwith %}{{ x }}{% endwith %}", {})
 
     def test_set_upward_via_cycle(self, stock, cyth):
         """cycle 'as' uses set_upward — verify it works across scopes."""
-        _m(stock, cyth,
-           "{% for i in items %}{% cycle 'a' 'b' as rowclass %}{{ rowclass }}{% endfor %}",
-           {"items": [1, 2, 3, 4]})
+        _m(
+            stock,
+            cyth,
+            "{% for i in items %}{% cycle 'a' 'b' as rowclass %}{{ rowclass }}{% endfor %}",
+            {"items": [1, 2, 3, 4]},
+        )
 
     def test_flatten_via_include_only(self, stock, cyth):
         """{% include ... only %} uses context.new() which calls flatten internally."""
-        _m(stock, cyth,
-           "{% include 'flat_inner.html' only %}",
-           {"greeting": "hello"})
+        _m(stock, cyth, "{% include 'flat_inner.html' only %}", {"greeting": "hello"})
 
     def test_context_update(self, stock, cyth):
         """{% with %} is effectively context.update/push."""
-        _m(stock, cyth,
-           "{% with a=1 b=2 %}{{ a }}-{{ b }}{% endwith %}",
-           {})
+        _m(stock, cyth, "{% with a=1 b=2 %}{{ a }}-{{ b }}{% endwith %}", {})
 
     def test_context_has_builtins(self, stock, cyth):
         """True, False, None should be available in any context."""
@@ -2485,36 +2570,45 @@ class TestContextOperations:
 # TEMPLATE_STRING_IF_INVALID (from Django's test_invalid_string.py)
 # ---------------------------------------------------------------------------
 
+
 class TestStringIfInvalid:
     """Tests that string_if_invalid is respected for missing variables."""
 
     @pytest.fixture
     def stock_inv(self):
         from django.template import Engine
+
         return Engine(string_if_invalid="INVALID")
 
     @pytest.fixture
     def cyth_inv(self):
         from django_templates_cythonized.engine import Engine
+
         return Engine(string_if_invalid="INVALID")
 
     def test_missing_var(self, stock_inv, cyth_inv):
         from django.template import Context
+
         from django_templates_cythonized.context import Context as CContext
+
         s = stock_inv.from_string("{{ missing }}").render(Context())
         c = cyth_inv.from_string("{{ missing }}").render(CContext())
         assert c == s == "INVALID"
 
     def test_missing_var_with_filter(self, stock_inv, cyth_inv):
         from django.template import Context
+
         from django_templates_cythonized.context import Context as CContext
+
         s = stock_inv.from_string("{{ missing|default:'fallback' }}").render(Context())
         c = cyth_inv.from_string("{{ missing|default:'fallback' }}").render(CContext())
         assert c == s
 
     def test_present_var(self, stock_inv, cyth_inv):
         from django.template import Context
+
         from django_templates_cythonized.context import Context as CContext
+
         s = stock_inv.from_string("{{ x }}").render(Context({"x": "hello"}))
         c = cyth_inv.from_string("{{ x }}").render(CContext({"x": "hello"}))
         assert c == s == "hello"
@@ -2528,9 +2622,11 @@ class TestStringIfInvalid:
 # Callable edge cases (from Django's test_callables.py)
 # ---------------------------------------------------------------------------
 
+
 class AltersDataObj:
     def dangerous(self):
         return "DANGER"
+
     dangerous.alters_data = True
 
     def safe_method(self):
@@ -2543,6 +2639,7 @@ class DoNotCallWholeObj:
 
     def __call__(self):
         return "SHOULD NOT SEE THIS"
+
     do_not_call_in_templates = True
 
     def __str__(self):
@@ -2553,8 +2650,7 @@ class TestCallables:
     """Tests for callable handling: alters_data, do_not_call_in_templates."""
 
     def test_callable_method(self, stock, cyth):
-        _m(stock, cyth, "{{ obj.get_value }}",
-           {"obj": CallableObj("hello")})
+        _m(stock, cyth, "{{ obj.get_value }}", {"obj": CallableObj("hello")})
 
     def test_alters_data(self, stock, cyth):
         """Methods with alters_data=True should produce empty string."""
@@ -2573,167 +2669,180 @@ class TestCallables:
 # Missing filter tests
 # ---------------------------------------------------------------------------
 
+
 class TestFilterDictsort:
     def test_basic(self, stock, cyth):
-        _m(stock, cyth, "{% for item in items|dictsort:'name' %}{{ item.name }},{% endfor %}",
-           {"items": [{"name": "c"}, {"name": "a"}, {"name": "b"}]})
+        _m(
+            stock,
+            cyth,
+            "{% for item in items|dictsort:'name' %}{{ item.name }},{% endfor %}",
+            {"items": [{"name": "c"}, {"name": "a"}, {"name": "b"}]},
+        )
 
     def test_reversed(self, stock, cyth):
-        _m(stock, cyth, "{% for item in items|dictsortreversed:'name' %}{{ item.name }},{% endfor %}",
-           {"items": [{"name": "c"}, {"name": "a"}, {"name": "b"}]})
+        _m(
+            stock,
+            cyth,
+            "{% for item in items|dictsortreversed:'name' %}{{ item.name }},{% endfor %}",
+            {"items": [{"name": "c"}, {"name": "a"}, {"name": "b"}]},
+        )
 
     def test_nested_key(self, stock, cyth):
-        _m(stock, cyth, "{% for item in items|dictsort:'info.age' %}{{ item.name }},{% endfor %}",
-           {"items": [{"name": "b", "info": {"age": 30}},
-                      {"name": "a", "info": {"age": 20}},
-                      {"name": "c", "info": {"age": 25}}]})
+        _m(
+            stock,
+            cyth,
+            "{% for item in items|dictsort:'info.age' %}{{ item.name }},{% endfor %}",
+            {
+                "items": [
+                    {"name": "b", "info": {"age": 30}},
+                    {"name": "a", "info": {"age": 20}},
+                    {"name": "c", "info": {"age": 25}},
+                ]
+            },
+        )
 
 
 class TestFilterTimesince:
     def test_basic(self, stock, cyth):
         import datetime as dt
+
         now = dt.datetime(2025, 6, 15, 12, 0, 0)
         past = now - dt.timedelta(days=3, hours=5)
-        _m(stock, cyth, "{{ past|timesince:now }}",
-           {"past": past, "now": now})
+        _m(stock, cyth, "{{ past|timesince:now }}", {"past": past, "now": now})
 
     def test_timeuntil(self, stock, cyth):
         import datetime as dt
+
         now = dt.datetime(2025, 6, 15, 12, 0, 0)
         future = now + dt.timedelta(days=2, hours=3)
-        _m(stock, cyth, "{{ future|timeuntil:now }}",
-           {"future": future, "now": now})
+        _m(stock, cyth, "{{ future|timeuntil:now }}", {"future": future, "now": now})
 
 
 class TestFilterUrlize:
     def test_url(self, stock, cyth):
-        _m(stock, cyth, "{{ text|urlize }}",
-           {"text": "Visit https://example.com today"})
+        _m(stock, cyth, "{{ text|urlize }}", {"text": "Visit https://example.com today"})
 
     def test_urlizetrunc(self, stock, cyth):
-        _m(stock, cyth, "{{ text|urlizetrunc:15 }}",
-           {"text": "Visit https://example.com/very/long/path today"})
+        _m(stock, cyth, "{{ text|urlizetrunc:15 }}", {"text": "Visit https://example.com/very/long/path today"})
 
     def test_email(self, stock, cyth):
-        _m(stock, cyth, "{{ text|urlize }}",
-           {"text": "Email me at user@example.com"})
+        _m(stock, cyth, "{{ text|urlize }}", {"text": "Email me at user@example.com"})
 
 
 class TestFilterTruncateHtml:
     def test_truncatechars_html(self, stock, cyth):
-        _m(stock, cyth, "{{ text|truncatechars_html:25 }}",
-           {"text": "<p>Hello <b>beautiful</b> world, this is long</p>"})
+        _m(
+            stock,
+            cyth,
+            "{{ text|truncatechars_html:25 }}",
+            {"text": "<p>Hello <b>beautiful</b> world, this is long</p>"},
+        )
 
     def test_truncatewords_html(self, stock, cyth):
-        _m(stock, cyth, "{{ text|truncatewords_html:3 }}",
-           {"text": "<p>Hello <b>beautiful</b> world, this is long</p>"})
+        _m(
+            stock,
+            cyth,
+            "{{ text|truncatewords_html:3 }}",
+            {"text": "<p>Hello <b>beautiful</b> world, this is long</p>"},
+        )
 
 
 class TestFilterSafeseq:
     def test_safeseq_join(self, stock, cyth):
-        _m(stock, cyth, '{{ items|safeseq|join:", " }}',
-           {"items": ["<b>a</b>", "<i>b</i>"]})
+        _m(stock, cyth, '{{ items|safeseq|join:", " }}', {"items": ["<b>a</b>", "<i>b</i>"]})
 
 
 class TestFilterUnorderedList:
     def test_basic(self, stock, cyth):
-        _m(stock, cyth, "{{ items|unordered_list }}",
-           {"items": ["States", ["Kansas", ["Lawrence", "Topeka"], "Illinois"]]})
+        _m(
+            stock,
+            cyth,
+            "{{ items|unordered_list }}",
+            {"items": ["States", ["Kansas", ["Lawrence", "Topeka"], "Illinois"]]},
+        )
 
 
 class TestFilterLinenumbers:
     def test_basic(self, stock, cyth):
-        _m(stock, cyth, "{{ text|linenumbers }}",
-           {"text": "line one\nline two\nline three"})
+        _m(stock, cyth, "{{ text|linenumbers }}", {"text": "line one\nline two\nline three"})
 
 
 class TestFilterPhone2numeric:
     def test_basic(self, stock, cyth):
-        _m(stock, cyth, "{{ phone|phone2numeric }}",
-           {"phone": "1-800-COLLECT"})
+        _m(stock, cyth, "{{ phone|phone2numeric }}", {"phone": "1-800-COLLECT"})
 
 
 class TestFilterGetDigit:
     def test_basic(self, stock, cyth):
-        _m(stock, cyth, "{{ num|get_digit:'2' }}",
-           {"num": 123})
+        _m(stock, cyth, "{{ num|get_digit:'2' }}", {"num": 123})
 
     def test_invalid(self, stock, cyth):
-        _m(stock, cyth, "{{ num|get_digit:'0' }}",
-           {"num": 123})
+        _m(stock, cyth, "{{ num|get_digit:'0' }}", {"num": 123})
 
 
 class TestFilterIriencode:
     def test_basic(self, stock, cyth):
-        _m(stock, cyth, "{{ url|iriencode }}",
-           {"url": "/path/to/page?q=hello world"})
+        _m(stock, cyth, "{{ url|iriencode }}", {"url": "/path/to/page?q=hello world"})
 
 
 class TestFilterLjustRjust:
     def test_ljust(self, stock, cyth):
-        _m(stock, cyth, "{{ val|ljust:'10' }}",
-           {"val": "hi"})
+        _m(stock, cyth, "{{ val|ljust:'10' }}", {"val": "hi"})
 
     def test_rjust(self, stock, cyth):
-        _m(stock, cyth, "{{ val|rjust:'10' }}",
-           {"val": "hi"})
+        _m(stock, cyth, "{{ val|rjust:'10' }}", {"val": "hi"})
 
 
 class TestFilterEscapeseq:
     """Django 5.0 escapeseq filter."""
+
     def test_basic(self, stock, cyth):
-        _m(stock, cyth, '{{ items|escapeseq|join:", " }}',
-           {"items": ["<b>a</b>", "b & c"]})
+        _m(stock, cyth, '{{ items|escapeseq|join:", " }}', {"items": ["<b>a</b>", "b & c"]})
 
 
 # ---------------------------------------------------------------------------
 # Extends edge cases (from Django's test_extends.py)
 # ---------------------------------------------------------------------------
 
+
 class TestExtendsEdgeCases:
     """Extended template inheritance tests."""
 
     def test_direct_extends(self, stock, cyth):
         """Direct extends with block override."""
-        _m(stock, cyth,
-           "{% extends 'base.html' %}{% block content %}CHILD{% endblock %}")
+        _m(stock, cyth, "{% extends 'base.html' %}{% block content %}CHILD{% endblock %}")
 
     def test_block_super(self, stock, cyth):
         """{{ block.super }} in a child template."""
-        _m(stock, cyth,
-           "{% extends 'base.html' %}"
-           "{% block content %}{{ block.super }}+CHILD{% endblock %}")
+        _m(stock, cyth, "{% extends 'base.html' %}{% block content %}{{ block.super }}+CHILD{% endblock %}")
 
     def test_three_level_inheritance(self, stock, cyth):
         """Three-level extends: grandchild -> middle -> base."""
-        result = _m(stock, cyth,
-           "{% extends 'middle.html' %}{% block content %}GRANDCHILD{% endblock %}")
+        result = _m(stock, cyth, "{% extends 'middle.html' %}{% block content %}GRANDCHILD{% endblock %}")
         assert "GRANDCHILD" in result
 
     def test_title_override(self, stock, cyth):
         """Override the title block."""
-        _m(stock, cyth,
-           "{% extends 'base.html' %}{% block title %}My Title{% endblock %}")
+        _m(stock, cyth, "{% extends 'base.html' %}{% block title %}My Title{% endblock %}")
 
 
 # ---------------------------------------------------------------------------
 # Cache tag (from Django's test_cache.py)
 # ---------------------------------------------------------------------------
 
+
 class TestCacheTag:
     def test_basic_cache(self, stock, cyth):
-        _m(stock, cyth,
-           "{% load cache %}{% cache 300 test_key %}CACHED{% endcache %}")
+        _m(stock, cyth, "{% load cache %}{% cache 300 test_key %}CACHED{% endcache %}")
 
     def test_cache_with_variable(self, stock, cyth):
-        _m(stock, cyth,
-           "{% load cache %}{% cache 300 test_key x %}{{ x }}{% endcache %}",
-           {"x": "hello"})
+        _m(stock, cyth, "{% load cache %}{% cache 300 test_key x %}{{ x }}{% endcache %}", {"x": "hello"})
 
 
 # ---------------------------------------------------------------------------
 # Querystring tag (Django 5.1+)
 # ---------------------------------------------------------------------------
+
 
 class TestQuerystringTag:
     """Tests for {% querystring %} tag including QueryDict.lists() support."""
@@ -2748,37 +2857,37 @@ class TestQuerystringTag:
         return s
 
     def test_basic_kwargs(self, stock, cyth):
-        self._qs(stock, cyth, "{% querystring foo='bar' %}",
-                 RequestFactory().get("/"))
+        self._qs(stock, cyth, "{% querystring foo='bar' %}", RequestFactory().get("/"))
 
     def test_override_existing(self, stock, cyth):
-        self._qs(stock, cyth, "{% querystring foo='new' %}",
-                 RequestFactory().get("/?foo=old"))
+        self._qs(stock, cyth, "{% querystring foo='new' %}", RequestFactory().get("/?foo=old"))
 
     def test_remove_key(self, stock, cyth):
-        self._qs(stock, cyth, "{% querystring foo=None %}",
-                 RequestFactory().get("/?foo=bar&baz=qux"))
+        self._qs(stock, cyth, "{% querystring foo=None %}", RequestFactory().get("/?foo=bar&baz=qux"))
 
     def test_custom_dict(self, stock, cyth):
-        self._qs(stock, cyth, "{% querystring my_dict page=2 %}",
-                 RequestFactory().get("/"), {"my_dict": {"sort": "name"}})
+        self._qs(
+            stock, cyth, "{% querystring my_dict page=2 %}", RequestFactory().get("/"), {"my_dict": {"sort": "name"}}
+        )
 
     def test_querydict_multivalue(self, stock, cyth):
         """QueryDict with multiple values for same key should preserve all."""
         from django.http import QueryDict
+
         qd = QueryDict("color=red&color=blue", mutable=False)
-        self._qs(stock, cyth, "{% querystring qd %}",
-                 RequestFactory().get("/"), {"qd": qd})
+        self._qs(stock, cyth, "{% querystring qd %}", RequestFactory().get("/"), {"qd": qd})
 
     def test_iterable_none_filtering(self, stock, cyth):
         """None values in iterables should be stripped."""
-        self._qs(stock, cyth, "{% querystring tags=tag_list %}",
-                 RequestFactory().get("/"), {"tag_list": ["a", None, "b"]})
+        self._qs(
+            stock, cyth, "{% querystring tags=tag_list %}", RequestFactory().get("/"), {"tag_list": ["a", None, "b"]}
+        )
 
 
 # ---------------------------------------------------------------------------
 # Template exceptions (from Django's test_exceptions.py)
 # ---------------------------------------------------------------------------
+
 
 class TestTemplateExceptions:
     """Template syntax error tests."""
@@ -2804,6 +2913,7 @@ class TestTemplateExceptions:
 # Load tag edge cases
 # ---------------------------------------------------------------------------
 
+
 class TestLoadTag:
     """Tests for {% load %} tag."""
 
@@ -2820,16 +2930,17 @@ class TestLoadTag:
 # Named endblock
 # ---------------------------------------------------------------------------
 
+
 class TestNamedEndblock:
     def test_named_endblock(self, stock, cyth):
         """{% endblock name %} syntax should be accepted."""
-        _m(stock, cyth,
-           "{% extends 'base.html' %}{% block content %}X{% endblock content %}")
+        _m(stock, cyth, "{% extends 'base.html' %}{% block content %}X{% endblock content %}")
 
 
 # ===========================================================================
 # EXCEPTION PROPAGATION & SEGFAULT SAFETY
 # ===========================================================================
+
 
 class _SilentException(Exception):
     silent_variable_failure = True
@@ -2849,7 +2960,7 @@ class _ExceptionTestObj:
     def __getitem__(self, key):
         if key == "silent_fail_key":
             raise _SilentException
-        elif key == "noisy_fail_key":
+        if key == "noisy_fail_key":
             raise _NoisyException
         raise KeyError
 
@@ -2887,16 +2998,12 @@ class TestExceptionPropagation:
     def test_property_raises_non_silent(self, stock, cyth):
         """{{ var.noisy_fail_attribute }} where property raises must propagate."""
         with pytest.raises(_NoisyException):
-            cyth.from_string("{{ var.noisy_fail_attribute }}").render(
-                {"var": _ExceptionTestObj()}
-            )
+            cyth.from_string("{{ var.noisy_fail_attribute }}").render({"var": _ExceptionTestObj()})
 
     def test_property_raises_attribute_error(self, stock, cyth):
         """{{ var.attribute_error_attribute }} — AttributeError propagates."""
         with pytest.raises(AttributeError):
-            cyth.from_string("{{ var.attribute_error_attribute }}").render(
-                {"var": _ExceptionTestObj()}
-            )
+            cyth.from_string("{{ var.attribute_error_attribute }}").render({"var": _ExceptionTestObj()})
 
     def test_silent_method_produces_empty(self, stock, cyth):
         """Silent exceptions should produce empty string, not crash."""
@@ -2915,6 +3022,7 @@ class TestExceptionPropagation:
 # SafeData PRESERVATION THROUGH STRINGFILTERS
 # ===========================================================================
 
+
 class _UnsafeObj:
     def __str__(self):
         return "you & me"
@@ -2932,17 +3040,13 @@ class TestSafeDataPreservation:
         _m(stock, cyth, "{{ obj|capfirst }}", {"obj": _UnsafeObj()})
 
     def test_unsafe_capfirst_autoescape_off(self, stock, cyth):
-        _m(stock, cyth,
-           "{% autoescape off %}{{ obj|capfirst }}{% endautoescape %}",
-           {"obj": _UnsafeObj()})
+        _m(stock, cyth, "{% autoescape off %}{{ obj|capfirst }}{% endautoescape %}", {"obj": _UnsafeObj()})
 
     def test_safe_capfirst(self, stock, cyth):
         _m(stock, cyth, "{{ obj|capfirst }}", {"obj": _SafeObj()})
 
     def test_safe_capfirst_autoescape_off(self, stock, cyth):
-        _m(stock, cyth,
-           "{% autoescape off %}{{ obj|capfirst }}{% endautoescape %}",
-           {"obj": _SafeObj()})
+        _m(stock, cyth, "{% autoescape off %}{{ obj|capfirst }}{% endautoescape %}", {"obj": _SafeObj()})
 
     def test_safe_lower(self, stock, cyth):
         _m(stock, cyth, "{{ obj|lower }}", {"obj": _SafeObj()})
@@ -2955,17 +3059,20 @@ class TestSafeDataPreservation:
 # CONTEXT COMPATIBILITY
 # ===========================================================================
 
+
 class TestContextTypes:
     """Template.render() must accept various context types."""
 
     def test_render_with_our_context(self, cyth):
         from django_templates_cythonized.context import Context
+
         tpl = cyth.from_string("{{ greeting }}").template
         ctx = Context({"greeting": "hello"})
         assert tpl.render(ctx) == "hello"
 
     def test_render_with_django_context(self, cyth):
         from django.template import Context as DjangoContext
+
         tpl = cyth.from_string("{{ greeting }}").template
         ctx = DjangoContext({"greeting": "world"})
         assert tpl.render(ctx) == "world"
@@ -2978,6 +3085,7 @@ class TestContextTypes:
 # ===========================================================================
 # FILTER BOUNDS SAFETY
 # ===========================================================================
+
 
 class TestFilterBoundsSafety:
     """Filters with list indexing must not segfault on empty inputs."""
@@ -3011,42 +3119,37 @@ class TestFilterBoundsSafety:
 # SAFESTRING ESCAPING (firstof/cycle asvar, render_value_in_context)
 # ===========================================================================
 
+
 class TestSafeStringEscaping:
     """Values stored back into context must be SafeString to prevent double-escaping."""
 
     def test_firstof_asvar_html_content(self, stock, cyth):
-        _m(stock, cyth,
-           "{% firstof val as result %}{{ result }}",
-           {"val": "<b>hello</b>"})
+        _m(stock, cyth, "{% firstof val as result %}{{ result }}", {"val": "<b>hello</b>"})
 
     def test_firstof_asvar_ampersand(self, stock, cyth):
-        _m(stock, cyth,
-           "{% firstof val as result %}{{ result }}",
-           {"val": "A & B"})
+        _m(stock, cyth, "{% firstof val as result %}{{ result }}", {"val": "A & B"})
 
     def test_firstof_asvar_safe_value(self, stock, cyth):
-        _m(stock, cyth,
-           "{% firstof val as result %}{{ result }}",
-           {"val": mark_safe("<b>bold</b>")})
+        _m(stock, cyth, "{% firstof val as result %}{{ result }}", {"val": mark_safe("<b>bold</b>")})
 
     def test_firstof_asvar_plain_text(self, stock, cyth):
-        _m(stock, cyth,
-           "{% firstof val as result %}{{ result }}",
-           {"val": "hello world"})
+        _m(stock, cyth, "{% firstof val as result %}{{ result }}", {"val": "hello world"})
 
     def test_firstof_asvar_fallback(self, stock, cyth):
-        _m(stock, cyth,
-           "{% firstof empty_val fallback as result %}{{ result }}",
-           {"empty_val": "", "fallback": "<em>test</em>"})
+        _m(
+            stock,
+            cyth,
+            "{% firstof empty_val fallback as result %}{{ result }}",
+            {"empty_val": "", "fallback": "<em>test</em>"},
+        )
 
     def test_cycle_asvar_html_content(self, stock, cyth):
-        _m(stock, cyth,
-           '{% for x in items %}{% cycle "<b>a</b>" "b" as cls %}{{ cls }}{% endfor %}',
-           {"items": [1, 2]})
+        _m(stock, cyth, '{% for x in items %}{% cycle "<b>a</b>" "b" as cls %}{{ cls }}{% endfor %}', {"items": [1, 2]})
 
     def test_render_value_in_context_returns_safestring(self, stock, cyth):
         from django_templates_cythonized.base import render_value_in_context
         from django_templates_cythonized.context import Context
+
         ctx = Context(autoescape=True)
         ctx.template = stock.from_string("").template
         result = render_value_in_context("hello <world>", ctx)
@@ -3058,6 +3161,7 @@ class TestSafeStringEscaping:
 # ===========================================================================
 # CALLABLE ATTRIBUTE RESOLUTION IN LOOPS
 # ===========================================================================
+
 
 class _CallableAttrObj:
     def __init__(self, status):
@@ -3074,45 +3178,61 @@ class TestCallableAttributeResolution:
     """Loop optimizations must call callable attributes before comparison."""
 
     def test_loopif_callable_eq(self, stock, cyth):
-        _m(stock, cyth,
-           '{% for book in books %}{% if book.get_status == "active" %}YES{% else %}NO{% endif %}{% endfor %}',
-           {"books": [_CallableAttrObj("active"), _CallableAttrObj("inactive")]})
+        _m(
+            stock,
+            cyth,
+            '{% for book in books %}{% if book.get_status == "active" %}YES{% else %}NO{% endif %}{% endfor %}',
+            {"books": [_CallableAttrObj("active"), _CallableAttrObj("inactive")]},
+        )
 
     def test_loopif_callable_ne(self, stock, cyth):
-        _m(stock, cyth,
-           '{% for book in books %}{% if book.get_status != "inactive" %}YES{% else %}NO{% endif %}{% endfor %}',
-           {"books": [_CallableAttrObj("active"), _CallableAttrObj("inactive")]})
+        _m(
+            stock,
+            cyth,
+            '{% for book in books %}{% if book.get_status != "inactive" %}YES{% else %}NO{% endif %}{% endfor %}',
+            {"books": [_CallableAttrObj("active"), _CallableAttrObj("inactive")]},
+        )
 
     def test_loopif_callable_truthiness(self, stock, cyth):
-        _m(stock, cyth,
-           '{% for book in books %}{% if book.is_active %}YES{% else %}NO{% endif %}{% endfor %}',
-           {"books": [_CallableAttrObj("active"), _CallableAttrObj("inactive")]})
+        _m(
+            stock,
+            cyth,
+            "{% for book in books %}{% if book.is_active %}YES{% else %}NO{% endif %}{% endfor %}",
+            {"books": [_CallableAttrObj("active"), _CallableAttrObj("inactive")]},
+        )
 
     def test_loopif_callable_with_elif(self, stock, cyth):
-        _m(stock, cyth,
-           '{% for book in books %}'
-           '{% if book.get_status == "active" %}A'
-           '{% elif book.get_status == "pending" %}P'
-           '{% else %}X{% endif %}'
-           '{% endfor %}',
-           {"books": [_CallableAttrObj("active"), _CallableAttrObj("pending"),
-                      _CallableAttrObj("other")]})
+        _m(
+            stock,
+            cyth,
+            "{% for book in books %}"
+            '{% if book.get_status == "active" %}A'
+            '{% elif book.get_status == "pending" %}P'
+            "{% else %}X{% endif %}"
+            "{% endfor %}",
+            {"books": [_CallableAttrObj("active"), _CallableAttrObj("pending"), _CallableAttrObj("other")]},
+        )
 
     def test_loopattr_callable(self, stock, cyth):
-        _m(stock, cyth,
-           '{% for book in books %}{{ book.get_status }}{% endfor %}',
-           {"books": [_CallableAttrObj("active"), _CallableAttrObj("inactive")]})
+        _m(
+            stock,
+            cyth,
+            "{% for book in books %}{{ book.get_status }}{% endfor %}",
+            {"books": [_CallableAttrObj("active"), _CallableAttrObj("inactive")]},
+        )
 
 
 # ===========================================================================
 # CONTEXT __copy__ SEMANTICS
 # ===========================================================================
 
+
 class TestContextCopy:
     """Context.__copy__ must preserve Python subclass __dict__ attributes."""
 
     def test_requestcontext_copy_preserves_request(self):
         from django_templates_cythonized.context import RequestContext
+
         rf = RequestFactory()
         request = rf.get("/")
         rc = RequestContext(request, {"a": 1})
@@ -3122,6 +3242,7 @@ class TestContextCopy:
 
     def test_requestcontext_copy_preserves_processors(self):
         from django_templates_cythonized.context import RequestContext
+
         rf = RequestFactory()
         request = rf.get("/")
         rc = RequestContext(request, {"a": 1}, processors=[lambda r: {"extra": True}])
@@ -3131,6 +3252,7 @@ class TestContextCopy:
 
     def test_requestcontext_new_preserves_request(self):
         from django_templates_cythonized.context import RequestContext
+
         rf = RequestFactory()
         request = rf.get("/")
         rc = RequestContext(request, {"a": 1})
@@ -3189,11 +3311,13 @@ class TestIncludeFlattening:
 # LAZY STRING (Promise) HANDLING
 # ===========================================================================
 
+
 class TestLazyStringHandling:
     """conditional_escape must resolve Promise before SafeData check."""
 
     def test_lazy_mark_safe_not_escaped(self):
         from django_templates_cythonized.html import conditional_escape
+
         lazy_safe = lazy(mark_safe, str)
         val = lazy_safe("<b>bold</b>")
         result = conditional_escape(val)
@@ -3201,6 +3325,7 @@ class TestLazyStringHandling:
 
     def test_lazy_plain_string_escaped(self):
         from django_templates_cythonized.html import conditional_escape
+
         lazy_str = lazy(str, str)
         val = lazy_str("<b>bold</b>")
         result = conditional_escape(val)
@@ -3208,6 +3333,7 @@ class TestLazyStringHandling:
 
     def test_format_html_with_lazy_safe(self):
         from django_templates_cythonized.html import format_html
+
         lazy_safe = lazy(mark_safe, str)
         val = lazy_safe("<b>bold</b>")
         result = format_html("{}", val)
@@ -3217,6 +3343,7 @@ class TestLazyStringHandling:
 # ===========================================================================
 # FORM RENDERER LANGUAGE CACHE
 # ===========================================================================
+
 
 class TestFormRendererLangCache:
     """CythonizedFormRenderer must reset _lang between renders."""
@@ -3229,10 +3356,17 @@ class TestFormRendererLangCache:
         ctx = getattr(_form_ctx_local, "ctx", None)
         if ctx is not None:
             ctx._lang = "stale-xx"
-            renderer.render("django/forms/widgets/text.html", {"widget": {
-                "name": "test", "is_hidden": False, "required": False,
-                "value": "", "attrs": {"id": "id_test"}, "template_name": "django/forms/widgets/text.html",
-            }})
-            assert ctx._lang != "stale-xx", (
-                "_lang was not reset between renders — stale language cache"
+            renderer.render(
+                "django/forms/widgets/text.html",
+                {
+                    "widget": {
+                        "name": "test",
+                        "is_hidden": False,
+                        "required": False,
+                        "value": "",
+                        "attrs": {"id": "id_test"},
+                        "template_name": "django/forms/widgets/text.html",
+                    }
+                },
             )
+            assert ctx._lang != "stale-xx", "_lang was not reset between renders — stale language cache"

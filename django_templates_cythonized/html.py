@@ -5,9 +5,9 @@ Provides fast escape() and conditional_escape() with C-level character
 scanning that skips html.escape() entirely when no special chars are present.
 """
 
-import cython
 import html as _html
 
+import cython
 from django.utils.functional import Promise
 from django.utils.safestring import SafeData, SafeString
 

@@ -30,6 +30,7 @@ OP_LE: cython.int = 12
 # TokenBase, Operator, Literal, EndToken are declared as cdef classes
 # in smartif.pxd. Do NOT use @cython.cclass or cython.declare() here.
 
+
 class TokenBase:
     """
     Base class for operators and literals, mainly for debugging and for
@@ -49,15 +50,11 @@ class TokenBase:
 
     def nud(self, parser):
         # Null denotation - called in prefix context
-        raise parser.error_class(
-            "Not expecting '%s' in this position in if tag." % self.id
-        )
+        raise parser.error_class("Not expecting '%s' in this position in if tag." % self.id)
 
     def led(self, left, parser):
         # Left denotation - called in infix context
-        raise parser.error_class(
-            "Not expecting '%s' as infix operator in if tag." % self.id
-        )
+        raise parser.error_class("Not expecting '%s' as infix operator in if tag." % self.id)
 
     def display(self):
         """
@@ -91,18 +88,14 @@ class Operator(TokenBase):
             self.first = parser.expression(self.lbp)
             self.second = None
             return self
-        raise parser.error_class(
-            "Not expecting '%s' in this position in if tag." % self.id
-        )
+        raise parser.error_class("Not expecting '%s' in this position in if tag." % self.id)
 
     def led(self, left, parser):
         if not self.is_prefix:
             self.first = left
             self.second = parser.expression(self.lbp)
             return self
-        raise parser.error_class(
-            "Not expecting '%s' as infix operator in if tag." % self.id
-        )
+        raise parser.error_class("Not expecting '%s' as infix operator in if tag." % self.id)
 
     @cython.ccall
     def eval(self, context: Context):
@@ -247,9 +240,7 @@ class IfParser:
         retval = self.expression()
         # Check that we have exhausted all the tokens
         if self.current_token is not _end_token:
-            raise self.error_class(
-                "Unused '%s' at end of if expression." % self.current_token.display()
-            )
+            raise self.error_class("Unused '%s' at end of if expression." % self.current_token.display())
         return retval
 
     def expression(self, rbp=0):

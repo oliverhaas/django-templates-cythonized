@@ -43,6 +43,7 @@ class CythonizedTemplates(DjangoTemplates):
             result = _Template(self.engine.get_template(template_name), self)
         except TemplateDoesNotExist as exc:
             from django.template.backends.django import reraise
+
             reraise(exc, self)
         self._template_cache[template_name] = result
         return result
@@ -51,7 +52,7 @@ class CythonizedTemplates(DjangoTemplates):
 class _Template:
     """Backend template wrapper using our cythonized make_context."""
 
-    __slots__ = ("template", "backend")
+    __slots__ = ("backend", "template")
 
     def __init__(self, template, backend):
         self.template = template
@@ -62,13 +63,12 @@ class _Template:
         return self.template.origin
 
     def render(self, context=None, request=None):
-        context = make_context(
-            context, request, autoescape=self.backend.engine.autoescape
-        )
+        context = make_context(context, request, autoescape=self.backend.engine.autoescape)
         try:
             return self.template.render(context)
         except TemplateDoesNotExist as exc:
             from django.template.backends.django import reraise
+
             reraise(exc, self.backend)
 
 

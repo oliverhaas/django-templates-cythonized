@@ -50,8 +50,7 @@ class Library:
             return compile_function
         else:
             raise ValueError(
-                "Unsupported arguments to Library.tag: (%r, %r)"
-                % (name, compile_function),
+                "Unsupported arguments to Library.tag: (%r, %r)" % (name, compile_function),
             )
 
     def tag_function(self, func):
@@ -98,8 +97,7 @@ class Library:
             return filter_func
         else:
             raise ValueError(
-                "Unsupported arguments to Library.filter: (%r, %r)"
-                % (name, filter_func),
+                "Unsupported arguments to Library.filter: (%r, %r)" % (name, filter_func),
             )
 
     def filter_function(self, func, **flags):
@@ -202,9 +200,7 @@ class Library:
                 elif tag_params and tag_params[0] == "content":
                     del tag_params[0]
                 else:
-                    raise TemplateSyntaxError(
-                        f"'{function_name}' must have a first argument of 'content'"
-                    )
+                    raise TemplateSyntaxError(f"'{function_name}' must have a first argument of 'content'")
 
                 bits = token.split_contents()[1:]
                 target_var = None
@@ -228,9 +224,7 @@ class Library:
                     function_name,
                 )
 
-                return SimpleBlockNode(
-                    nodelist, func, takes_context, args, kwargs, target_var
-                )
+                return SimpleBlockNode(nodelist, func, takes_context, args, kwargs, target_var)
 
             self.tag(function_name, compile_func)
             return func
@@ -304,10 +298,10 @@ class TagHelperNode(Node):
     function.
     """
 
-    func = cython.declare(object, visibility='public')
-    takes_context = cython.declare(cython.bint, visibility='public')
-    args = cython.declare(list, visibility='public')
-    kwargs = cython.declare(dict, visibility='public')
+    func = cython.declare(object, visibility="public")
+    takes_context = cython.declare(cython.bint, visibility="public")
+    args = cython.declare(list, visibility="public")
+    kwargs = cython.declare(dict, visibility="public")
 
     def __init__(self, func, takes_context, args, kwargs):
         self.func = func
@@ -326,7 +320,7 @@ class TagHelperNode(Node):
 
 @cython.cclass
 class SimpleNode(TagHelperNode):
-    target_var = cython.declare(object, visibility='public')
+    target_var = cython.declare(object, visibility="public")
     child_nodelists = ()
 
     def __init__(self, func, takes_context, args, kwargs, target_var):
@@ -347,7 +341,7 @@ class SimpleNode(TagHelperNode):
 
 @cython.cclass
 class SimpleBlockNode(SimpleNode):
-    nodelist = cython.declare(object, visibility='public')
+    nodelist = cython.declare(object, visibility="public")
 
     def __init__(self, nodelist, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -359,16 +353,14 @@ class SimpleBlockNode(SimpleNode):
 
         # Restore the "content" argument.
         # It will move depending on whether takes_context was passed.
-        resolved_args.insert(
-            1 if self.takes_context else 0, self.nodelist.render(context)
-        )
+        resolved_args.insert(1 if self.takes_context else 0, self.nodelist.render(context))
 
         return resolved_args, resolved_kwargs
 
 
 @cython.cclass
 class InclusionNode(TagHelperNode):
-    filename = cython.declare(object, visibility='public')
+    filename = cython.declare(object, visibility="public")
 
     def __init__(self, func, takes_context, args, kwargs, filename):
         super().__init__(func, takes_context, args, kwargs)
@@ -390,9 +382,7 @@ class InclusionNode(TagHelperNode):
                 t = self.filename
             elif isinstance(getattr(self.filename, "template", None), Template):
                 t = self.filename.template
-            elif not isinstance(self.filename, str) and isinstance(
-                self.filename, Iterable
-            ):
+            elif not isinstance(self.filename, str) and isinstance(self.filename, Iterable):
                 t = context.template.engine.select_template(self.filename)
             else:
                 t = context.template.engine.get_template(self.filename)
@@ -429,15 +419,12 @@ def parse_bits(
             params = params[1:]
         else:
             raise TemplateSyntaxError(
-                "'%s' is decorated with takes_context=True so it must "
-                "have a first argument of 'context'" % name
+                "'%s' is decorated with takes_context=True so it must have a first argument of 'context'" % name
             )
     args = []
     kwargs = {}
     unhandled_params = list(params)
-    unhandled_kwargs = [
-        kwarg for kwarg in kwonly if not kwonly_defaults or kwarg not in kwonly_defaults
-    ]
+    unhandled_kwargs = [kwarg for kwarg in kwonly if not kwonly_defaults or kwarg not in kwonly_defaults]
     for bit in bits:
         # First we try to extract a potential kwarg from the bit
         kwarg = token_kwargs([bit], parser)
@@ -446,15 +433,10 @@ def parse_bits(
             param, value = kwarg.popitem()
             if param not in params and param not in kwonly and varkw is None:
                 # An unexpected keyword argument was supplied
-                raise TemplateSyntaxError(
-                    "'%s' received unexpected keyword argument '%s'" % (name, param)
-                )
+                raise TemplateSyntaxError("'%s' received unexpected keyword argument '%s'" % (name, param))
             elif param in kwargs:
                 # The keyword argument has already been supplied once
-                raise TemplateSyntaxError(
-                    "'%s' received multiple values for keyword argument '%s'"
-                    % (name, param)
-                )
+                raise TemplateSyntaxError("'%s' received multiple values for keyword argument '%s'" % (name, param))
             else:
                 # All good, record the keyword argument
                 kwargs[str(param)] = value
@@ -468,8 +450,7 @@ def parse_bits(
         else:
             if kwargs:
                 raise TemplateSyntaxError(
-                    "'%s' received some positional argument(s) after some "
-                    "keyword argument(s)" % name
+                    "'%s' received some positional argument(s) after some keyword argument(s)" % name
                 )
             else:
                 # Record the positional argument
@@ -479,9 +460,7 @@ def parse_bits(
                     unhandled_params.pop(0)
                 except IndexError:
                     if varargs is None:
-                        raise TemplateSyntaxError(
-                            "'%s' received too many positional arguments" % name
-                        )
+                        raise TemplateSyntaxError("'%s' received too many positional arguments" % name)
     if defaults is not None:
         # Consider the last n params handled, where n is the
         # number of defaults.
@@ -503,8 +482,7 @@ def import_library(name):
         module = import_module(name)
     except ImportError as e:
         raise InvalidTemplateLibrary(
-            "Invalid template library specified. ImportError raised when "
-            "trying to load '%s': %s" % (name, e)
+            "Invalid template library specified. ImportError raised when trying to load '%s': %s" % (name, e)
         )
     try:
         return module.register

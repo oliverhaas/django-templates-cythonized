@@ -57,9 +57,7 @@ class SimpleTemplateResponse(HttpResponse):
         """
         obj_dict = self.__dict__.copy()
         if not self._is_rendered:
-            raise ContentNotRenderedError(
-                "The response content must be rendered before it can be pickled."
-            )
+            raise ContentNotRenderedError("The response content must be rendered before it can be pickled.")
         for attr in self.rendering_attrs:
             if attr in obj_dict:
                 del obj_dict[attr]
@@ -124,17 +122,13 @@ class SimpleTemplateResponse(HttpResponse):
 
     def __iter__(self):
         if not self._is_rendered:
-            raise ContentNotRenderedError(
-                "The response content must be rendered before it can be iterated over."
-            )
+            raise ContentNotRenderedError("The response content must be rendered before it can be iterated over.")
         return super().__iter__()
 
     @property
     def content(self):
         if not self._is_rendered:
-            raise ContentNotRenderedError(
-                "The response content must be rendered before it can be accessed."
-            )
+            raise ContentNotRenderedError("The response content must be rendered before it can be accessed.")
         return super().content
 
     @content.setter
@@ -158,7 +152,5 @@ class TemplateResponse(SimpleTemplateResponse):
         using=None,
         headers=None,
     ):
-        super().__init__(
-            template, context, content_type, status, charset, using, headers=headers
-        )
+        super().__init__(template, context, content_type, status, charset, using, headers=headers)
         self._request = request
