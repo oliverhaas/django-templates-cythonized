@@ -33,12 +33,8 @@ class TemplateDoesNotExist(_DjangoTemplateDoesNotExist):
         engines.
     """
 
-    pass
-
 
 class TemplateSyntaxError(_DjangoTemplateSyntaxError):
     """
     The exception used for syntax errors during parsing or rendering.
     """
-
-    pass

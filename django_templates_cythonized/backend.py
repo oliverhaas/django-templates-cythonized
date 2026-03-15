@@ -1,8 +1,10 @@
 import threading
 
+from django.conf import settings
 from django.forms.renderers import BaseRenderer, EngineMixin
 from django.template import TemplateDoesNotExist
-from django.template.backends.django import DjangoTemplates
+from django.template.backends.base import BaseEngine
+from django.template.backends.django import DjangoTemplates, reraise
 
 from .context import Context, make_context
 from .engine import Engine
@@ -17,16 +19,11 @@ class CythonizedTemplates(DjangoTemplates):
         params = params.copy()
         options = params.pop("OPTIONS").copy()
         options.setdefault("autoescape", True)
-
-        from django.conf import settings
-
         options.setdefault("debug", settings.DEBUG)
         options.setdefault("file_charset", "utf-8")
         libraries = options.get("libraries", {})
         options["libraries"] = self.get_templatetag_libraries(libraries)
         # Call BaseEngine.__init__ (skip DjangoTemplates.__init__)
-        from django.template.backends.base import BaseEngine
-
         BaseEngine.__init__(self, params)
         # Use OUR Engine instead of django.template.engine.Engine
         self.engine = Engine(self.dirs, self.app_dirs, **options)
@@ -42,8 +39,6 @@ class CythonizedTemplates(DjangoTemplates):
         try:
             result = _Template(self.engine.get_template(template_name), self)
         except TemplateDoesNotExist as exc:
-            from django.template.backends.django import reraise
-
             reraise(exc, self)
         self._template_cache[template_name] = result
         return result
@@ -67,8 +62,6 @@ class _Template:
         try:
             return self.template.render(context)
         except TemplateDoesNotExist as exc:
-            from django.template.backends.django import reraise
-
             reraise(exc, self.backend)
 
 

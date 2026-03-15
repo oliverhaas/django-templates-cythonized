@@ -16,6 +16,7 @@ from django.utils import timezone
 from django.utils.datastructures import DeferredSubDict
 from django.utils.html import format_html
 from django.utils.lorem_ipsum import paragraphs, words
+from django.utils.translation import get_language
 
 from .html import conditional_escape, escape
 from .safestring import SafeData, SafeString, mark_safe
@@ -32,6 +33,7 @@ from cython.cimports.django_templates_cythonized.base import (
     _fe_is_direct_loopvar,
     _render_var_with_value,
     _resolve_fe_raw,
+    _get_lang,
 )
 from cython.cimports.django_templates_cythonized.context import Context
 from cython.cimports.django_templates_cythonized.formats import localize, _float_is_str_fast
@@ -119,7 +121,7 @@ class CsrfTokenNode(Node):
                 warnings.warn(
                     "A {% csrf_token %} was used in a template, but the context "
                     "did not provide the value. This is usually caused by not "
-                    "using RequestContext."
+                    "using RequestContext.",
                 )
             return ""
 
@@ -770,20 +772,10 @@ class ForNode(Node):
                                 else:
                                     nodelist[idx] = _av
                             elif isinstance(_av, int) and not isinstance(_av, bool):
-                                _lang = context._lang
-                                if _lang is None:
-                                    from django.utils.translation import get_language
-
-                                    _lang = get_language()
-                                    context._lang = _lang
+                                _lang = _get_lang(context)
                                 nodelist[idx] = localize(_av, use_l10n=context.use_l10n, lang=_lang)
                             elif isinstance(_av, float):
-                                _lang = context._lang
-                                if _lang is None:
-                                    from django.utils.translation import get_language
-
-                                    _lang = get_language()
-                                    context._lang = _lang
+                                _lang = _get_lang(context)
                                 if _float_is_str_fast(_lang):
                                     nodelist[idx] = str(_av)
                                 else:
@@ -1749,7 +1741,7 @@ def do_for(parser, token):
         (
             "empty",
             "endfor",
-        )
+        ),
     )
     token = parser.next_token()
     if token.contents == "empty":
@@ -2085,7 +2077,7 @@ def partialdef_func(parser, token):
         inline = True
     elif len(bits) == 3:
         raise TemplateSyntaxError(
-            "The 'inline' argument does not have any parameters; either use 'inline' or remove it completely."
+            "The 'inline' argument does not have any parameters; either use 'inline' or remove it completely.",
         )
     elif len(bits) == 2:
         partial_name = bits[1]
@@ -2113,7 +2105,7 @@ def partialdef_func(parser, token):
     partials = parser.extra_data.setdefault("partials", {})
     if partial_name in partials:
         raise TemplateSyntaxError(
-            f"Partial '{partial_name}' is already defined in the '{parser.origin.name}' template."
+            f"Partial '{partial_name}' is already defined in the '{parser.origin.name}' template.",
         )
     partials[partial_name] = PartialTemplate(
         nodelist,
@@ -2359,7 +2351,7 @@ def templatetag(parser, token):
     tag = bits[1]
     if tag not in TemplateTagNode.mapping:
         raise TemplateSyntaxError(
-            "Invalid templatetag argument: '%s'. Must be one of: %s" % (tag, list(TemplateTagNode.mapping))
+            "Invalid templatetag argument: '%s'. Must be one of: %s" % (tag, list(TemplateTagNode.mapping)),
         )
     return TemplateTagNode(tag)
 

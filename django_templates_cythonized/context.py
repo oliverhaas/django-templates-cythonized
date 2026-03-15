@@ -28,8 +28,6 @@ def _context_lookup(dicts: list, key):
 class ContextPopException(Exception):
     "pop() has been called more times than push()"
 
-    pass
-
 
 class ContextDict(dict):
     """Legacy ContextDict — kept for backwards compatibility but no longer used

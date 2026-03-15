@@ -72,7 +72,7 @@ from django.utils.deprecation import django_file_prefixes
 from django.utils.inspect import lazy_annotations
 from django.utils.regex_helper import _lazy_re_compile
 from django.utils.text import get_text_list, smart_split, unescape_string_literal
-from django.utils.translation import gettext_lazy, pgettext_lazy
+from django.utils.translation import get_language, gettext_lazy, pgettext_lazy
 
 from .exceptions import TemplateDoesNotExist, TemplateSyntaxError
 
@@ -887,7 +887,7 @@ class FilterExpression:
             start = match.start()
             if upto != start:
                 raise TemplateSyntaxError(
-                    "Could not parse some characters: %s|%s|%s" % (token[:upto], token[upto:start], token[start:])
+                    "Could not parse some characters: %s|%s|%s" % (token[:upto], token[upto:start], token[start:]),
                 )
             if var_obj is None:
                 if constant := match["constant"]:
@@ -915,7 +915,7 @@ class FilterExpression:
                         getattr(filter_func, "expects_localtime", False),
                         getattr(filter_func, "needs_autoescape", False),
                         getattr(filter_func, "is_safe", False),
-                    )
+                    ),
                 )
             upto = match.end()
         if upto != len(token):
@@ -1409,6 +1409,16 @@ class TextNode(Node):
         return self.s
 
 
+@cython.cfunc
+def _get_lang(context: Context):
+    """Resolve and cache the current language on the context."""
+    lang = context._lang
+    if lang is None:
+        lang = get_language()
+        context._lang = lang
+    return lang
+
+
 @cython.ccall
 def render_value_in_context(value, context: Context):
     """
@@ -1428,15 +1438,7 @@ def render_value_in_context(value, context: Context):
     # call for the common non-datetime case (ints, floats, etc.).
     if isinstance(value, _datetime_type):
         value = template_localtime(value, use_tz=context.use_tz)
-    # Lazily resolve and cache _lang on the context. Widget sub-renders
-    # (form fields) never hit this path (their values are strings), so
-    # get_language() is only called once for the outer template render.
-    lang = context._lang
-    if lang is None:
-        from django.utils.translation import get_language
-
-        lang = get_language()
-        context._lang = lang
+    lang = _get_lang(context)
     value = localize(value, use_l10n=context.use_l10n, lang=lang)
     if context.autoescape:
         if not isinstance(value, str):
@@ -1688,23 +1690,13 @@ def _render_var_fast(fe: FilterExpression, context: Context):
     # so skip the _fast_escape call. Uses localize() to respect
     # USE_THOUSAND_SEPARATOR.
     if isinstance(value, int) and not isinstance(value, bool):
-        lang = context._lang
-        if lang is None:
-            from django.utils.translation import get_language
-
-            lang = get_language()
-            context._lang = lang
+        lang = _get_lang(context)
         return localize(value, use_l10n=context.use_l10n, lang=lang)
 
     # Float fast path: str(float) produces digits, '.', '-', 'e', '+'
     # None of which are HTML special chars, so skip the _fast_escape call.
     if isinstance(value, float):
-        lang = context._lang
-        if lang is None:
-            from django.utils.translation import get_language
-
-            lang = get_language()
-            context._lang = lang
+        lang = _get_lang(context)
         if _float_is_str_fast(lang):
             return str(value)
         return localize(value, use_l10n=context.use_l10n, lang=lang)
@@ -1798,23 +1790,13 @@ def _render_var_with_value(fe: FilterExpression, value, context: Context):
 
     # Int fast path: localized int strings never contain HTML special chars.
     if isinstance(value, int) and not isinstance(value, bool):
-        lang = context._lang
-        if lang is None:
-            from django.utils.translation import get_language
-
-            lang = get_language()
-            context._lang = lang
+        lang = _get_lang(context)
         return localize(value, use_l10n=context.use_l10n, lang=lang)
 
     # Float fast path: str(float) produces digits, '.', '-', 'e', '+'
     # None of which are HTML special chars.
     if isinstance(value, float):
-        lang = context._lang
-        if lang is None:
-            from django.utils.translation import get_language
-
-            lang = get_language()
-            context._lang = lang
+        lang = _get_lang(context)
         if _float_is_str_fast(lang):
             return str(value)
         return localize(value, use_l10n=context.use_l10n, lang=lang)
