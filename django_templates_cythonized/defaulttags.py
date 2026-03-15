@@ -430,14 +430,26 @@ class ForNode(Node):
                 _can_cache_consts: cython.bint = True
                 for j in range(num_nodes):
                     _nd_w = loop_nodes[j]
-                    if isinstance(_nd_w, CycleNode):
-                        _cw: CycleNode = _nd_w
-                        if _cw.variable_name:
-                            _loop_written_vars.add(_cw.variable_name)
-                    elif not isinstance(_nd_w, (TextNode, VariableNode, IfNode)):
+                    if not isinstance(_nd_w, (TextNode, VariableNode, IfNode, CycleNode)):
                         # Non-standard nodes (custom tags etc.) may modify
                         # context variables — disable constant var caching.
                         _can_cache_consts = False
+                # Deep scan: find variable names written by ANY tag in the
+                # loop body, including inside IfNode branches. Tags like
+                # firstof/now/url/widthratio use 'asvar', cycle uses
+                # 'variable_name', regroup uses 'var_name'. All write
+                # directly to context without push/pop scoping.
+                if _can_cache_consts:
+                    for _nd_deep in self.nodelist_loop.get_nodes_by_type(Node):
+                        _ndd_asvar = getattr(_nd_deep, "asvar", None)
+                        if _ndd_asvar:
+                            _loop_written_vars.add(_ndd_asvar)
+                        _ndd_vn = getattr(_nd_deep, "variable_name", None)
+                        if _ndd_vn:
+                            _loop_written_vars.add(_ndd_vn)
+                        _ndd_var = getattr(_nd_deep, "var_name", None)
+                        if _ndd_var:
+                            _loop_written_vars.add(_ndd_var)
                 for j in range(num_nodes):
                     _nd = loop_nodes[j]
                     if isinstance(_nd, TextNode):
@@ -707,6 +719,147 @@ class ForNode(Node):
                                 continue
                             _ntags[j] = 7  # LOOPCYCLE
                             _nattrs[j] = _cyc_nd
+
+            # Post-process: flatten LOOPIF_CONST dynamic branches (tag 6)
+            # into individually classified nodes, then merge adjacent TEXT.
+            # Tag-6 entries call NodeList.render() per iteration; flattening
+            # lets each inner node benefit from LOOPATTR optimization.
+            if _ntags is not None:
+                _orig_nn: cython.Py_ssize_t = num_nodes
+                # Step 1: Flatten tag-6 entries.
+                _has_tag6: cython.bint = False
+                for j in range(num_nodes):
+                    if _ntags[j] == 6:
+                        _has_tag6 = True
+                        break
+                if _has_tag6:
+                    _new_tags: list = []
+                    _new_attrs: list = []
+                    _new_text: list = []
+                    _new_nodes: list = []
+                    for j in range(num_nodes):
+                        if _ntags[j] != 6:
+                            _new_tags.append(_ntags[j])
+                            _new_attrs.append(_nattrs[j])
+                            _new_text.append(_ntext[j])
+                            _new_nodes.append(loop_nodes[j])
+                        else:
+                            _flat_nl: NodeList = _nattrs[j]
+                            _flat_nodes: list = _flat_nl._nodes
+                            for _fk in range(len(_flat_nodes)):
+                                _fnd = _flat_nodes[_fk]
+                                if isinstance(_fnd, TextNode):
+                                    _ftnd: TextNode = _fnd
+                                    _new_tags.append(0)
+                                    _new_attrs.append(None)
+                                    _new_text.append(_ftnd.s)
+                                    _new_nodes.append(_fnd)
+                                    continue
+                                if not isinstance(_fnd, VariableNode):
+                                    # CycleNode, IfNode, etc. — generic render
+                                    _new_tags.append(4)
+                                    _new_attrs.append(None)
+                                    _new_text.append(None)
+                                    _new_nodes.append(_fnd)
+                                    if not isinstance(_fnd, IfNode):
+                                        _can_cache_consts = False
+                                    continue
+                                # VariableNode: classify for LOOPATTR/FORLOOP_COUNTER/const
+                                _fvnd: VariableNode = _fnd
+                                _ffec: FilterExpression = _fvnd.filter_expression
+                                _f_done: cython.bint = False
+                                if _ffec.is_var:
+                                    _fvarc = _ffec.var
+                                    _flkc = _fvarc.lookups if not _fvarc.translate else None
+                                    if _flkc is not None and len(_flkc) >= 1:
+                                        if _flkc[0] == loopvar0 and len(_flkc) == 2:
+                                            _flkt: tuple = _flkc
+                                            _fnf: cython.Py_ssize_t = len(_ffec.filters)
+                                            if _fnf == 0:
+                                                _new_tags.append(2)  # LOOPATTR_NOFILTER
+                                                _new_attrs.append(_flkt[1])
+                                                _new_text.append(None)
+                                                _new_nodes.append(_fnd)
+                                                _f_done = True
+                                            elif _fnf == 1:
+                                                _new_tags.append(3)  # LOOPATTR_FILTER
+                                                _new_attrs.append(_flkt[1])
+                                                _new_text.append(None)
+                                                _new_nodes.append(_fnd)
+                                                _f_done = True
+                                        elif _flkc[0] == "forloop" and len(_flkc) == 2 and len(_ffec.filters) == 0:
+                                            _ffl_attr = _flkc[1]
+                                            _ffl_code: cython.int = -99
+                                            if _ffl_attr == "counter":
+                                                _ffl_code = 1
+                                            elif _ffl_attr == "counter0":
+                                                _ffl_code = 0
+                                            elif _ffl_attr == "revcounter":
+                                                _ffl_code = -1
+                                            elif _ffl_attr == "revcounter0":
+                                                _ffl_code = -2
+                                            if _ffl_code != -99:
+                                                _new_tags.append(8)
+                                                _new_attrs.append(_ffl_code)
+                                            else:
+                                                _new_tags.append(1)
+                                                _new_attrs.append(None)
+                                            _new_text.append(None)
+                                            _new_nodes.append(_fnd)
+                                            _f_done = True
+                                        elif (
+                                            _can_cache_consts
+                                            and _flkc[0] != loopvar0
+                                            and _flkc[0] != "forloop"
+                                            and _flkc[0] not in _loop_written_vars
+                                        ):
+                                            _new_tags.append(0)
+                                            _new_attrs.append(None)
+                                            _new_text.append(_fvnd.render(context))
+                                            _new_nodes.append(_fnd)
+                                            _f_done = True
+                                if not _f_done:
+                                    _new_tags.append(1)  # regular VAR
+                                    _new_attrs.append(None)
+                                    _new_text.append(None)
+                                    _new_nodes.append(_fnd)
+                    _ntags = _new_tags
+                    _nattrs = _new_attrs
+                    _ntext = _new_text
+                    loop_nodes = _new_nodes
+                    num_nodes = len(_new_tags)
+                # Step 2: Merge adjacent TEXT (tag 0) nodes to reduce dispatch slots.
+                _prev_was_text: cython.bint = False
+                _has_adj_text: cython.bint = False
+                for j in range(num_nodes):
+                    if _ntags[j] == 0:
+                        if _prev_was_text:
+                            _has_adj_text = True
+                            break
+                        _prev_was_text = True
+                    else:
+                        _prev_was_text = False
+                if _has_adj_text:
+                    _m_tags: list = []
+                    _m_attrs: list = []
+                    _m_text: list = []
+                    _m_nodes: list = []
+                    for j in range(num_nodes):
+                        if _ntags[j] == 0 and len(_m_tags) > 0 and _m_tags[len(_m_tags) - 1] == 0:
+                            _m_text[len(_m_text) - 1] = _m_text[len(_m_text) - 1] + _ntext[j]
+                        else:
+                            _m_tags.append(_ntags[j])
+                            _m_attrs.append(_nattrs[j])
+                            _m_text.append(_ntext[j])
+                            _m_nodes.append(loop_nodes[j])
+                    _ntags = _m_tags
+                    _nattrs = _m_attrs
+                    _ntext = _m_text
+                    loop_nodes = _m_nodes
+                    num_nodes = len(_m_tags)
+                # Re-allocate output list if node count changed
+                if num_nodes != _orig_nn:
+                    nodelist = [None] * (len_values * num_nodes)
 
             # Create forloop context. CForloopContext computes
             # counter/revcounter/first/last on demand — no dict writes per iteration.

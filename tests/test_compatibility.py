@@ -394,7 +394,7 @@ class TestIfTag:
                     {"a": True, "b": True},
                     {"a": True, "b": False},
                     {"a": False, "b": False},
-                ]
+                ],
             },
         )
 
@@ -784,7 +784,7 @@ class TestIfchangedTag:
                     {"group": "A", "name": "a1"},
                     {"group": "A", "name": "a2"},
                     {"group": "B", "name": "b1"},
-                ]
+                ],
             },
         )
 
@@ -809,7 +809,7 @@ class TestRegroupTag:
                     {"name": "b", "category": "Y"},
                     {"name": "c", "category": "X"},
                     {"name": "d", "category": "Y"},
-                ]
+                ],
             },
         )
 
@@ -1414,7 +1414,7 @@ class TestMixedEdgeCases:
                     {"name": "alice", "active": True},
                     {"name": "bob", "active": False},
                     {"name": "carol", "active": True},
-                ]
+                ],
             },
         )
 
@@ -1432,7 +1432,7 @@ class TestMixedEdgeCases:
                     {"items": ["a", "b"]},
                     {"items": ["c"]},
                     {"items": ["d", "e", "f"]},
-                ]
+                ],
             },
         )
 
@@ -1520,7 +1520,7 @@ class TestLoopEdgeCases:
                     {"name": "a", "price": 10},
                     {"name": "b"},  # missing 'price'
                     {"price": 30},  # missing 'name'
-                ]
+                ],
             },
         )
 
@@ -1535,7 +1535,7 @@ class TestLoopEdgeCases:
                     {"name": "hello"},
                     {},  # missing 'name'
                     {"name": "world"},
-                ]
+                ],
             },
         )
 
@@ -1550,7 +1550,7 @@ class TestLoopEdgeCases:
                     {"active": True},
                     {},  # missing 'active'
                     {"active": False},
-                ]
+                ],
             },
         )
 
@@ -1567,7 +1567,7 @@ class TestLoopEdgeCases:
                     {"score": 100},
                     {},  # missing 'score'
                     {"score": 50},
-                ]
+                ],
             },
         )
 
@@ -1582,7 +1582,7 @@ class TestLoopEdgeCases:
                     {"val": 20},
                     {"val": "not a number"},  # str > int raises TypeError
                     {"val": 5},
-                ]
+                ],
             },
         )
 
@@ -1602,7 +1602,7 @@ class TestLoopEdgeCases:
                 "items": [
                     Book(title="A", price=10),
                     Book(title="B"),  # missing 'price'
-                ]
+                ],
             },
         )
 
@@ -1624,7 +1624,7 @@ class TestLoopEdgeCases:
                     {"msg": "hello"},
                     {"msg": "world"},
                     {"msg": "foo"},
-                ]
+                ],
             },
         )
 
@@ -1655,7 +1655,7 @@ class TestLoopEdgeCases:
                     {"name": "b", "active": False},
                     {"name": "c", "active": True},
                     {"name": "d", "active": True},
-                ]
+                ],
             },
         )
 
@@ -1675,7 +1675,7 @@ class TestLoopEdgeCases:
                     {"name": "dict1"},
                     Obj("obj1"),
                     {"name": "dict2"},
-                ]
+                ],
             },
         )
 
@@ -1697,7 +1697,7 @@ class TestLoopEdgeCases:
                 "rows": [
                     {"cells": [{"val": 1}, {"val": 2}]},
                     {"cells": [{"val": 3}]},
-                ]
+                ],
             },
         )
 
@@ -1832,7 +1832,7 @@ class TestResetCycle:
                     {"reset": True},  # resets cycle
                     {"reset": False},  # should restart from 'a'
                     {"reset": False},
-                ]
+                ],
             },
         )
 
@@ -2697,7 +2697,7 @@ class TestFilterDictsort:
                     {"name": "b", "info": {"age": 30}},
                     {"name": "a", "info": {"age": 20}},
                     {"name": "c", "info": {"age": 25}},
-                ]
+                ],
             },
         )
 
@@ -2867,7 +2867,11 @@ class TestQuerystringTag:
 
     def test_custom_dict(self, stock, cyth):
         self._qs(
-            stock, cyth, "{% querystring my_dict page=2 %}", RequestFactory().get("/"), {"my_dict": {"sort": "name"}}
+            stock,
+            cyth,
+            "{% querystring my_dict page=2 %}",
+            RequestFactory().get("/"),
+            {"my_dict": {"sort": "name"}},
         )
 
     def test_querydict_multivalue(self, stock, cyth):
@@ -2880,7 +2884,11 @@ class TestQuerystringTag:
     def test_iterable_none_filtering(self, stock, cyth):
         """None values in iterables should be stripped."""
         self._qs(
-            stock, cyth, "{% querystring tags=tag_list %}", RequestFactory().get("/"), {"tag_list": ["a", None, "b"]}
+            stock,
+            cyth,
+            "{% querystring tags=tag_list %}",
+            RequestFactory().get("/"),
+            {"tag_list": ["a", None, "b"]},
         )
 
 
@@ -3366,7 +3374,458 @@ class TestFormRendererLangCache:
                         "value": "",
                         "attrs": {"id": "id_test"},
                         "template_name": "django/forms/widgets/text.html",
-                    }
+                    },
                 },
             )
             assert ctx._lang != "stale-xx", "_lang was not reset between renders — stale language cache"
+
+
+# ---------------------------------------------------------------------------
+# Variable writing / scoping inside for loops
+# ---------------------------------------------------------------------------
+
+
+class TestForLoopVariableScoping:
+    """Tests for {% with %}, {% firstof ... as %}, {% cycle ... as %},
+    {% now ... as %}, {% widthratio ... as %}, and other context-writing
+    tags inside for loops — especially interactions with LOOPIF_CONST
+    and constant variable caching optimizations."""
+
+    # --- Basic {% with %} inside {% for %} ---
+
+    def test_with_inside_for(self, stock, cyth):
+        """{% with book.title as t %} inside for loop."""
+        _m(
+            stock,
+            cyth,
+            "{% for book in books %}{% with book.title as t %}[{{ t }}]{% endwith %}{% endfor %}",
+            {"books": [{"title": "A"}, {"title": "B"}, {"title": "C"}]},
+        )
+
+    def test_with_expression_inside_for(self, stock, cyth):
+        """{% with t=book.title %} (keyword form) inside for loop."""
+        _m(
+            stock,
+            cyth,
+            "{% for book in books %}{% with t=book.title %}[{{ t }}]{% endwith %}{% endfor %}",
+            {"books": [{"title": "X"}, {"title": "Y"}, {"title": "Z"}]},
+        )
+
+    def test_with_shadowing_outer_variable(self, stock, cyth):
+        """{% with %} shadows a variable that exists in outer context."""
+        _m(
+            stock,
+            cyth,
+            "{% for book in books %}"
+            "{% with 'SHADOW' as currency %}[{{ currency }}]{% endwith %}"
+            "({{ currency }})"
+            "{% endfor %}",
+            {"books": [{"title": "A"}, {"title": "B"}], "currency": "$"},
+        )
+
+    def test_with_shadowing_loop_variable(self, stock, cyth):
+        """{% with %} shadows the loop variable itself."""
+        _m(
+            stock,
+            cyth,
+            "{% for x in items %}({{ x }}){% with 'REPLACED' as x %}[{{ x }}]{% endwith %}({{ x }}){% endfor %}",
+            {"items": ["a", "b", "c"]},
+        )
+
+    def test_with_nested_inside_for(self, stock, cyth):
+        """Nested {% with %} blocks inside for loop."""
+        _m(
+            stock,
+            cyth,
+            "{% for book in books %}"
+            "{% with book.title as t %}"
+            "{% with 'X' as x %}{{ t }}{{ x }}{% endwith %}"
+            "{% endwith %}"
+            "{% endfor %}",
+            {"books": [{"title": "A"}, {"title": "B"}]},
+        )
+
+    # --- {% firstof ... as %} inside {% for %} ---
+
+    def test_firstof_as_inside_for(self, stock, cyth):
+        """{% firstof ... as var %} writes to context each iteration."""
+        _m(
+            stock,
+            cyth,
+            "{% for book in books %}{% firstof book.title 'N/A' as t %}[{{ t }}]{% endfor %}",
+            {
+                "books": [
+                    {"title": "A"},
+                    {"title": ""},
+                    {"title": "C"},
+                    {},
+                ],
+            },
+        )
+
+    def test_firstof_as_changes_per_iteration(self, stock, cyth):
+        """Value set by firstof must change each iteration, not be cached."""
+        _m(
+            stock,
+            cyth,
+            "{% for item in items %}{% firstof item.a item.b 'default' as val %}{{ val }},{% endfor %}",
+            {
+                "items": [
+                    {"a": "A1", "b": "B1"},
+                    {"a": "", "b": "B2"},
+                    {"a": "", "b": ""},
+                    {"a": "A4", "b": "B4"},
+                ],
+            },
+        )
+
+    # --- {% cycle ... as %} inside {% for %} ---
+
+    def test_cycle_as_inside_for(self, stock, cyth):
+        """{% cycle ... as cls %} writes to context, used later."""
+        _m(
+            stock,
+            cyth,
+            "{% for x in items %}{% cycle 'odd' 'even' as cls %}[{{ cls }}:{{ x }}]{% endfor %}",
+            {"items": ["a", "b", "c", "d"]},
+        )
+
+    def test_cycle_as_used_multiple_times(self, stock, cyth):
+        """Cycle variable used multiple times in same iteration."""
+        _m(
+            stock,
+            cyth,
+            "{% for x in items %}{% cycle 'A' 'B' 'C' as cls %}<{{ cls }}>{{ x }}</{{ cls }}>{% endfor %}",
+            {"items": [1, 2, 3, 4, 5, 6]},
+        )
+
+    # --- {% now ... as %} inside {% for %} ---
+
+    def test_now_as_inside_for(self, stock, cyth):
+        """{% now 'Y' as yr %} inside for loop — same value each iter."""
+        _m(
+            stock,
+            cyth,
+            "{% for x in items %}{% now 'Y' as yr %}[{{ yr }}:{{ x }}]{% endfor %}",
+            {"items": ["a", "b"]},
+        )
+
+    # --- {% widthratio ... as %} inside {% for %} ---
+
+    def test_widthratio_as_inside_for(self, stock, cyth):
+        """{% widthratio ... as pct %} changes per iteration."""
+        _m(
+            stock,
+            cyth,
+            "{% for book in books %}{% widthratio book.rating 5 100 as pct %}[{{ pct }}]{% endfor %}",
+            {
+                "books": [
+                    {"rating": 1},
+                    {"rating": 3},
+                    {"rating": 5},
+                ],
+            },
+        )
+
+    # --- Context-writing tags inside {% if %} inside {% for %} ---
+    # These test LOOPIF_CONST interactions with variable caching.
+
+    def test_with_inside_const_if_inside_for(self, stock, cyth):
+        """{% with %} inside LOOPIF_CONST=true branch."""
+        _m(
+            stock,
+            cyth,
+            "{% for book in books %}"
+            "{% if show %}"
+            "{% with book.title as t %}[{{ t }}]{% endwith %}"
+            "{% endif %}"
+            "{% endfor %}",
+            {"books": [{"title": "A"}, {"title": "B"}], "show": True},
+        )
+
+    def test_with_inside_const_if_false(self, stock, cyth):
+        """{% with %} inside LOOPIF_CONST=false — branch not taken."""
+        _m(
+            stock,
+            cyth,
+            "{% for book in books %}"
+            "{% if show %}"
+            "{% with book.title as t %}[{{ t }}]{% endwith %}"
+            "{% endif %}"
+            "{% endfor %}",
+            {"books": [{"title": "A"}, {"title": "B"}], "show": False},
+        )
+
+    def test_firstof_as_inside_const_if_var_used_outside(self, stock, cyth):
+        """{% firstof ... as t %} inside const-if, {{ t }} used OUTSIDE the if.
+        This is the dangerous pattern: t is set per-iteration inside the if,
+        but {{ t }} outside must NOT be cached as a constant."""
+        _m(
+            stock,
+            cyth,
+            "{% for book in books %}{% if show %}{% firstof book.title 'N/A' as t %}{% endif %}[{{ t }}]{% endfor %}",
+            {
+                "books": [{"title": "A"}, {"title": "B"}, {"title": "C"}],
+                "show": True,
+            },
+        )
+
+    def test_firstof_as_inside_const_if_false_var_used_outside(self, stock, cyth):
+        """Same as above but show=False — firstof never runs, t is unset."""
+        _m(
+            stock,
+            cyth,
+            "{% for book in books %}{% if show %}{% firstof book.title 'N/A' as t %}{% endif %}[{{ t }}]{% endfor %}",
+            {
+                "books": [{"title": "A"}, {"title": "B"}, {"title": "C"}],
+                "show": False,
+            },
+        )
+
+    def test_widthratio_as_inside_const_if_var_used_outside(self, stock, cyth):
+        """{% widthratio ... as pct %} inside const-if, {{ pct }} outside."""
+        _m(
+            stock,
+            cyth,
+            "{% for book in books %}"
+            "{% if show %}{% widthratio book.rating 5 100 as pct %}{% endif %}"
+            "[{{ pct }}]"
+            "{% endfor %}",
+            {
+                "books": [{"rating": 1}, {"rating": 3}, {"rating": 5}],
+                "show": True,
+            },
+        )
+
+    def test_now_as_inside_const_if_var_used_outside(self, stock, cyth):
+        """{% now 'Y' as yr %} inside const-if, {{ yr }} used outside."""
+        _m(
+            stock,
+            cyth,
+            "{% for book in books %}{% if show %}{% now 'Y' as yr %}{% endif %}[{{ yr }}]{% endfor %}",
+            {"books": [{"title": "A"}, {"title": "B"}], "show": True},
+        )
+
+    # --- Variable redefinition patterns ---
+
+    def test_var_redefined_by_with(self, stock, cyth):
+        """Outer var, then {% with %} redefines it, then outer again."""
+        _m(
+            stock,
+            cyth,
+            "{% for book in books %}"
+            "({{ label }})"
+            "{% with book.title as label %}[{{ label }}]{% endwith %}"
+            "({{ label }})"
+            "{% endfor %}",
+            {
+                "books": [{"title": "A"}, {"title": "B"}],
+                "label": "OUTER",
+            },
+        )
+
+    def test_const_var_after_with_block(self, stock, cyth):
+        """{{ currency }} (outer constant) after {% with %} that doesn't touch it."""
+        _m(
+            stock,
+            cyth,
+            "{% for book in books %}{% with book.title as t %}{{ t }}{% endwith %}{{ currency }}{% endfor %}",
+            {
+                "books": [{"title": "A"}, {"title": "B"}],
+                "currency": "$",
+            },
+        )
+
+    def test_loop_var_single_segment_not_cached(self, stock, cyth):
+        """{{ x }} (the loop variable itself) must NOT be cached as constant."""
+        _m(
+            stock,
+            cyth,
+            "{% for x in items %}{% if flag %}{{ x }},{% endif %}{% endfor %}",
+            {"items": [1, 2, 3], "flag": True},
+        )
+
+    def test_loop_var_single_segment_in_const_if(self, stock, cyth):
+        """{{ x }} inside LOOPIF_CONST=true branch, x is the loop var."""
+        _m(
+            stock,
+            cyth,
+            "{% for x in items %}{% if show %}[{{ x }}]{% endif %}{% endfor %}",
+            {"items": ["a", "b", "c"], "show": True},
+        )
+
+    def test_loop_var_single_segment_in_const_if_false(self, stock, cyth):
+        """{{ x }} inside LOOPIF_CONST=false — branch not taken."""
+        _m(
+            stock,
+            cyth,
+            "{% for x in items %}{% if show %}[{{ x }}]{% endif %}{% endfor %}",
+            {"items": ["a", "b", "c"], "show": False},
+        )
+
+    # --- Compound patterns: const-if + with + variables ---
+
+    def test_const_if_with_multiple_vars_and_text(self, stock, cyth):
+        """LOOPIF_CONST branch with {% with %}, text, and loop vars."""
+        _m(
+            stock,
+            cyth,
+            "{% for book in books %}"
+            "<row>"
+            "{% if show_extra %}"
+            "{% with book.title as t %}"
+            "<extra>{{ t }} by {{ book.author }}</extra>"
+            "{% endwith %}"
+            "{% endif %}"
+            "</row>"
+            "{% endfor %}",
+            {
+                "books": [
+                    {"title": "A", "author": "X"},
+                    {"title": "B", "author": "Y"},
+                ],
+                "show_extra": True,
+            },
+        )
+
+    def test_const_if_with_cycle_and_const_var(self, stock, cyth):
+        """LOOPIF_CONST branch + cycle + constant variable."""
+        _m(
+            stock,
+            cyth,
+            "{% for book in books %}"
+            "<tr class=\"{% cycle 'odd' 'even' %}\">"
+            "{{ book.title }}"
+            "{% if show_price %}{{ currency }}{{ book.price }}{% endif %}"
+            "</tr>"
+            "{% endfor %}",
+            {
+                "books": [
+                    {"title": "A", "price": 10},
+                    {"title": "B", "price": 20},
+                    {"title": "C", "price": 30},
+                ],
+                "show_price": True,
+                "currency": "$",
+            },
+        )
+
+    def test_const_if_false_with_cycle_and_const_var(self, stock, cyth):
+        """Same as above but show_price=False."""
+        _m(
+            stock,
+            cyth,
+            "{% for book in books %}"
+            "<tr class=\"{% cycle 'odd' 'even' %}\">"
+            "{{ book.title }}"
+            "{% if show_price %}{{ currency }}{{ book.price }}{% endif %}"
+            "</tr>"
+            "{% endfor %}",
+            {
+                "books": [
+                    {"title": "A", "price": 10},
+                    {"title": "B", "price": 20},
+                ],
+                "show_price": False,
+                "currency": "$",
+            },
+        )
+
+    # --- Multi-segment loop var inside const-if (LOOPATTR after flatten) ---
+
+    def test_loopattr_inside_const_if_true(self, stock, cyth):
+        """{{ book.description }} inside LOOPIF_CONST=true — flattened to LOOPATTR."""
+        _m(
+            stock,
+            cyth,
+            "{% for book in books %}"
+            "{{ book.title }}"
+            "{% if show_desc %}<desc>{{ book.description }}</desc>{% endif %}"
+            "{% endfor %}",
+            {
+                "books": [
+                    {"title": "A", "description": "Desc A"},
+                    {"title": "B", "description": "Desc B"},
+                ],
+                "show_desc": True,
+            },
+        )
+
+    def test_loopattr_with_filter_inside_const_if(self, stock, cyth):
+        """{{ book.genre|capfirst }} inside LOOPIF_CONST=true — LOOPATTR_FILTER."""
+        _m(
+            stock,
+            cyth,
+            "{% for book in books %}{% if show_genre %}[{{ book.genre|capfirst }}]{% endif %}{% endfor %}",
+            {
+                "books": [
+                    {"genre": "fiction"},
+                    {"genre": "science"},
+                ],
+                "show_genre": True,
+            },
+        )
+
+    def test_forloop_counter_inside_const_if(self, stock, cyth):
+        """{{ forloop.counter }} inside LOOPIF_CONST=true — FORLOOP_COUNTER."""
+        _m(
+            stock,
+            cyth,
+            "{% for x in items %}{% if show_num %}#{{ forloop.counter }}{% endif %}={{ x }},{% endfor %}",
+            {"items": ["a", "b", "c"], "show_num": True},
+        )
+
+    def test_forloop_counter_inside_const_if_false(self, stock, cyth):
+        """{{ forloop.counter }} inside LOOPIF_CONST=false."""
+        _m(
+            stock,
+            cyth,
+            "{% for x in items %}{% if show_num %}#{{ forloop.counter }}{% endif %}={{ x }},{% endfor %}",
+            {"items": ["a", "b", "c"], "show_num": False},
+        )
+
+    # --- Edge: multiple const-if blocks with different conditions ---
+
+    def test_multiple_const_ifs(self, stock, cyth):
+        """Multiple LOOPIF_CONST blocks with different conditions."""
+        _m(
+            stock,
+            cyth,
+            "{% for book in books %}"
+            "<row>"
+            "{% if show_title %}{{ book.title }}{% endif %}"
+            "{% if show_price %}{{ currency }}{{ book.price }}{% endif %}"
+            "{% if show_desc %}{{ book.description }}{% endif %}"
+            "</row>"
+            "{% endfor %}",
+            {
+                "books": [
+                    {"title": "A", "price": 10, "description": "D1"},
+                    {"title": "B", "price": 20, "description": "D2"},
+                ],
+                "show_title": True,
+                "show_price": False,
+                "show_desc": True,
+                "currency": "$",
+            },
+        )
+
+    # --- Edge: empty loop bodies with const-if ---
+
+    def test_const_if_only_content_in_loop(self, stock, cyth):
+        """Entire loop body is a single const-if."""
+        _m(
+            stock,
+            cyth,
+            "{% for x in items %}{% if show %}{{ x }}{% endif %}{% endfor %}",
+            {"items": [1, 2, 3], "show": True},
+        )
+
+    def test_const_if_only_content_false(self, stock, cyth):
+        """Entire loop body is a single const-if=false → empty output."""
+        _m(
+            stock,
+            cyth,
+            "{% for x in items %}{% if show %}{{ x }}{% endif %}{% endfor %}",
+            {"items": [1, 2, 3], "show": False},
+        )
