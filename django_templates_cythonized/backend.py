@@ -8,6 +8,7 @@ from django.template.backends.django import DjangoTemplates, reraise
 
 from .context import Context, make_context
 from .engine import Engine
+from .forms import render_widget_fast
 
 _form_ctx_local = threading.local()
 
@@ -77,6 +78,12 @@ class CythonizedFormRenderer(EngineMixin, BaseRenderer):
     backend = CythonizedTemplates
 
     def render(self, template_name, context, request=None):
+        # Fast path: direct HTML generation for known widget templates.
+        result = render_widget_fast(template_name, context)
+        if result is not None:
+            return result
+
+        # Fallback: template-based rendering for unknown templates.
         tpl = self.get_template(template_name).template
 
         ctx = getattr(_form_ctx_local, "ctx", None)
