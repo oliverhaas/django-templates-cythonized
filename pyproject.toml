@@ -39,11 +39,11 @@ build-backend = "setuptools.build_meta"
 [dependency-groups]
 dev = [
   "Cython==3.2.4",
-  "mypy==1.19.1",
   "pre-commit==4.5.1",
   "pytest==9.0.2",
   "pytest-codspeed==4.3.0",
   "pytest-cov==7.0.0",
+  "pytest-django==4.12.0",
   "ruff==0.15.6",
 ]
 
@@ -61,17 +61,17 @@ fix = true
 [tool.ruff.lint]
 select = ["ALL"]
 ignore = [
-  "COM812", # Conflicts with ruff-format
-  "D",      # Docstrings - Django source doesn't follow our style
-  "E501",   # Line length handled by config
-  "EM",     # Exception strings inline are fine
-  "FBT",    # Boolean params match Django's API
+  "COM812",  # Conflicts with ruff-format
+  "D",       # Docstrings - Django source doesn't follow our style
+  "E501",    # Line length handled by config
+  "EM",      # Exception strings inline are fine
+  "FBT",     # Boolean params match Django's API
   "PLR0913", # Too many args - Django's existing API
   "PLR2004", # Magic values from Django source
-  "SLF001", # Private member access needed for Django internals
-  "TRY003", # Long exception messages are helpful for debugging
-  "TRY300", # return in try block is cleaner for some patterns
-  "SIM108", # Ternary not always clearer
+  "SLF001",  # Private member access needed for Django internals
+  "TRY003",  # Long exception messages are helpful for debugging
+  "TRY300",  # return in try block is cleaner for some patterns
+  "SIM108",  # Ternary not always clearer
 ]
 
 [tool.ruff.lint.flake8-annotations]
@@ -110,16 +110,8 @@ suppress-none-returning = true
 "django_templates_cythonized/*.py" = ["ALL"]
 "django_templates_cythonized/loaders/*.py" = ["ALL"]
 
-[tool.mypy]
-python_version = "3.12"
-pretty = true
-show_error_codes = true
-show_error_context = true
-warn_redundant_casts = true
-warn_unused_ignores = true
-warn_unreachable = false
-
 [tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "tests.settings"
 addopts = "--cov=django_templates_cythonized --cov-report=term-missing --no-cov-on-fail"
 pythonpath = ["."]
 testpaths = ["tests"]

@@ -1,18 +1,13 @@
-import os
-
-os.environ.setdefault("DJANGO_SETTINGS_MODULE", "tests.settings")
-
-import django
-
-django.setup()
-
-# Create database tables for admin integration tests (in-memory SQLite).
-from django.core.management import call_command
-
-call_command("migrate", "--run-syncdb", verbosity=0)
-
 import pytest
+from django.core.management import call_command
 from django.template import engines
+
+
+@pytest.fixture(scope="session")
+def django_db_setup(django_test_environment, django_db_blocker):
+    """Create database tables for admin integration tests (in-memory SQLite)."""
+    with django_db_blocker.unblock():
+        call_command("migrate", "--run-syncdb", verbosity=0)
 
 
 @pytest.fixture

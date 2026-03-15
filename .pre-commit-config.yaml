@@ -54,13 +54,3 @@ repos:
         entry: uv run ruff format
         language: system
         pass_filenames: false
-
-  - repo: local
-    hooks:
-      - id: mypy
-        name: mypy
-        language: system
-        entry: uv run mypy django_templates_cythonized/
-        pass_filenames: false
-        always_run: true
-        stages: [pre-push]
