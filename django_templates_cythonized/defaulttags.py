@@ -428,19 +428,20 @@ class ForNode(Node):
                 # These must NOT be cached as constants.
                 _loop_written_vars: set = set()
                 _can_cache_consts: cython.bint = True
-                for j in range(num_nodes):
-                    _nd_w = loop_nodes[j]
-                    if not isinstance(_nd_w, (TextNode, VariableNode, IfNode, CycleNode)):
-                        # Non-standard nodes (custom tags etc.) may modify
-                        # context variables — disable constant var caching.
+                # Deep scan: check ALL nodes (including nested inside
+                # IfNodes) for non-standard tags that may modify context.
+                # We walk child nodelists manually rather than using
+                # get_nodes_by_type(Node) because custom tag nodes may
+                # inherit from Django's stock Node (not our cclass Node)
+                # and would be invisible to isinstance checks.
+                # Also collect variable names written by standard tags
+                # (asvar, variable_name, var_name).
+                _scan_stack: list = list(self.nodelist_loop)
+                while _scan_stack:
+                    _nd_deep = _scan_stack.pop()
+                    if not isinstance(_nd_deep, (TextNode, VariableNode, IfNode, CycleNode)):
                         _can_cache_consts = False
-                # Deep scan: find variable names written by ANY tag in the
-                # loop body, including inside IfNode branches. Tags like
-                # firstof/now/url/widthratio use 'asvar', cycle uses
-                # 'variable_name', regroup uses 'var_name'. All write
-                # directly to context without push/pop scoping.
-                if _can_cache_consts:
-                    for _nd_deep in self.nodelist_loop.get_nodes_by_type(Node):
+                    if _can_cache_consts:
                         _ndd_asvar = getattr(_nd_deep, "asvar", None)
                         if _ndd_asvar:
                             _loop_written_vars.add(_ndd_asvar)
@@ -450,6 +451,16 @@ class ForNode(Node):
                         _ndd_var = getattr(_nd_deep, "var_name", None)
                         if _ndd_var:
                             _loop_written_vars.add(_ndd_var)
+                    # Walk into child nodelists (e.g., IfNode's branches)
+                    for _cnl_name in getattr(_nd_deep, "child_nodelists", ()):
+                        _cnl = getattr(_nd_deep, _cnl_name, None)
+                        if _cnl is not None:
+                            _scan_stack.extend(_cnl)
+                    # Also walk IfNode's conditions_nodelists directly
+                    _cond_nls = getattr(_nd_deep, "conditions_nodelists", None)
+                    if _cond_nls is not None:
+                        for _cond_pair in _cond_nls:
+                            _scan_stack.extend(_cond_pair[1])
                 for j in range(num_nodes):
                     _nd = loop_nodes[j]
                     if isinstance(_nd, TextNode):
@@ -1180,6 +1191,14 @@ class ForNode(Node):
 
                     if pop_context:
                         _dicts.pop()
+            # After the loop: sync render_context for any LOOPCYCLE nodes
+            # so that post-loop {% cycle name %} picks up from the correct
+            # position instead of restarting at 0.
+            if _ntags is not None:
+                for j in range(num_nodes):
+                    if _ntags[j] == 7:  # LOOPCYCLE
+                        _cyc_post: CycleNode = _nattrs[j]
+                        context.render_context[_cyc_post] = len_values % _cyc_post._n
         finally:
             context.dicts.pop()
         return SafeString("".join(nodelist))

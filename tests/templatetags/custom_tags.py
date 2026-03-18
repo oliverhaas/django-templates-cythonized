@@ -99,3 +99,35 @@ def do_upper(parser, token):
     nodelist = parser.parse(("endupper",))
     parser.delete_first_token()
     return UpperNode(nodelist)
+
+
+# --- Custom Node: {% setvar name value %} ---
+
+
+class SetVarNode(template.Node):
+    """Sets a context variable: {% setvar name value %}
+
+    This mimics real-world custom tags that write to context directly
+    (e.g., permission checks, computed values) without using Django's
+    standard ``as varname`` pattern.
+    """
+
+    def __init__(self, var_name, value_expr):
+        self.var_name_str = var_name
+        self.value_expr = value_expr
+
+    def render(self, context):
+        context[self.var_name_str] = self.value_expr.resolve(context)
+        return ""
+
+
+@register.tag("setvar")
+def do_setvar(parser, token):
+    bits = token.split_contents()
+    if len(bits) != 3:
+        raise template.TemplateSyntaxError(
+            f"'setvar' tag requires two arguments (name, value), got {len(bits) - 1}",
+        )
+    var_name = bits[1]
+    value_expr = parser.compile_filter(bits[2])
+    return SetVarNode(var_name, value_expr)

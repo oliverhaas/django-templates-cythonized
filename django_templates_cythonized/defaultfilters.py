@@ -190,7 +190,7 @@ def floatformat(text, arg=-1):
                 0,
                 use_l10n=use_l10n,
                 force_grouping=force_grouping,
-            )
+            ),
         )
 
     exp = Decimal(1).scaleb(-abs(p))
@@ -218,7 +218,7 @@ def floatformat(text, arg=-1):
             abs(p),
             use_l10n=use_l10n,
             force_grouping=force_grouping,
-        )
+        ),
     )
 
 
@@ -606,10 +606,8 @@ def dictsortreversed(value, arg):
 def first(value):
     """Return the first item in a list."""
     try:
-        if not value:
-            return ""
         return value[0]
-    except (IndexError, TypeError):
+    except IndexError:
         return ""
 
 
@@ -630,10 +628,8 @@ def join(value, arg, autoescape=True):
 def last(value):
     """Return the last item in a list."""
     try:
-        if not value:
-            return ""
         return value[-1]
-    except (IndexError, TypeError):
+    except IndexError:
         return ""
 
 

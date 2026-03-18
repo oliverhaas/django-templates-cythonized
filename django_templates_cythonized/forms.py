@@ -79,7 +79,7 @@ def _build_attrs_html(attrs: dict) -> str:
         if value is False:
             continue
         parts.append(" ")
-        parts.append(str(name))
+        parts.append(_escape(name))
         if value is not True:
             parts.append('="')
             parts.append(_escape(value))

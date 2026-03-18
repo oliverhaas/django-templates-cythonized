@@ -3829,3 +3829,140 @@ class TestForLoopVariableScoping:
             "{% for x in items %}{% if show %}{{ x }}{% endif %}{% endfor %}",
             {"items": [1, 2, 3], "show": False},
         )
+
+
+# ---------------------------------------------------------------------------
+# Bug regression tests
+# ---------------------------------------------------------------------------
+
+
+class TestBugCycleCounterAfterLoop:
+    """B2: Named cycle counter must be correct after the for loop ends.
+
+    When a named cycle like ``{% cycle 'a' 'b' 'c' as cls %}`` is used
+    inside a for loop, and later referenced after the loop with
+    ``{% cycle cls %}``, the post-loop cycle should continue from where
+    the loop left off — not restart from the beginning.
+    """
+
+    def test_cycle_continues_after_loop(self, stock, cyth):
+        """Post-loop cycle picks up where the loop left off."""
+        _m(
+            stock,
+            cyth,
+            "{% for x in items %}{% cycle 'a' 'b' 'c' as cls %}{% endfor %}{% cycle cls %}",
+            {"items": [1, 2, 3, 4, 5]},
+        )
+
+    def test_cycle_after_loop_single_iteration(self, stock, cyth):
+        """A single-iteration loop advances the counter by 1."""
+        _m(
+            stock,
+            cyth,
+            "{% for x in items %}{% cycle 'x' 'y' as cls %}{% endfor %}{% cycle cls %}",
+            {"items": ["only"]},
+        )
+
+    def test_cycle_after_loop_exact_multiple(self, stock, cyth):
+        """Loop length is an exact multiple of the cycle length."""
+        _m(
+            stock,
+            cyth,
+            "{% for x in items %}{% cycle 'a' 'b' as cls %}{% endfor %}{% cycle cls %}",
+            {"items": [1, 2, 3, 4]},
+        )
+
+
+class TestBugFirstLastFilterFalsyContainer:
+    """B3: first/last filters must match stock Django for edge-case inputs.
+
+    A falsy-but-subscriptable object (``__bool__`` returns False but
+    ``__getitem__`` works) should still have its first/last item
+    extracted, not be treated as empty.
+    """
+
+    def test_first_on_falsy_container(self, stock, cyth):
+        class FalsyContainer:
+            def __bool__(self):
+                return False
+
+            def __getitem__(self, i):
+                if i == 0:
+                    return "found"
+                raise IndexError
+
+        _m(stock, cyth, "{{ val|first }}", {"val": FalsyContainer()})
+
+    def test_last_on_falsy_container(self, stock, cyth):
+        class FalsyContainer:
+            def __bool__(self):
+                return False
+
+            def __getitem__(self, i):
+                if i == -1:
+                    return "found"
+                raise IndexError
+
+        _m(stock, cyth, "{{ val|last }}", {"val": FalsyContainer()})
+
+    def test_first_empty_list(self, stock, cyth):
+        """Empty list should still return empty string (not break)."""
+        _m(stock, cyth, "{{ val|first }}", {"val": []})
+
+    def test_last_empty_list(self, stock, cyth):
+        _m(stock, cyth, "{{ val|last }}", {"val": []})
+
+    def test_first_normal_list(self, stock, cyth):
+        """Normal lists still work after the fix."""
+        _m(stock, cyth, "{{ val|first }}", {"val": ["a", "b", "c"]})
+
+    def test_last_normal_list(self, stock, cyth):
+        _m(stock, cyth, "{{ val|last }}", {"val": ["a", "b", "c"]})
+
+
+class TestBugConstCacheCustomTagInIf:
+    """B5: Constant variable caching must account for custom tags inside IfNodes.
+
+    When a custom tag that writes to context (without using Django's
+    standard ``as varname`` pattern) is nested inside an ``{% if %}``
+    block within a for loop, the constant-variable cache must not treat
+    the written variable as constant — its value changes per iteration.
+    """
+
+    def test_setvar_inside_if_not_cached(self, stock, cyth):
+        """A variable set by a custom tag inside {% if %} must update each iteration."""
+        _m(
+            stock,
+            cyth,
+            "{% load custom_tags %}"
+            "{% for item in items %}"
+            "{% if True %}{% setvar label item.name %}{% endif %}"
+            "{{ label }},"
+            "{% endfor %}",
+            {
+                "items": [
+                    SimpleObj(name="Alice"),
+                    SimpleObj(name="Bob"),
+                    SimpleObj(name="Charlie"),
+                ],
+            },
+        )
+
+    def test_setvar_inside_if_with_condition(self, stock, cyth):
+        """Custom tag inside conditional if — the variable should reflect each item."""
+        _m(
+            stock,
+            cyth,
+            "{% load custom_tags %}"
+            "{% for item in items %}"
+            "{% if item.active %}{% setvar status 'ON' %}{% endif %}"
+            "{{ status }},"
+            "{% endfor %}",
+            {
+                "items": [
+                    SimpleObj(active=True),
+                    SimpleObj(active=False),
+                    SimpleObj(active=True),
+                ],
+            },
+        )

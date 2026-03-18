@@ -649,3 +649,84 @@ class TestAutoCompilationIntegration:
         finally:
             _backend._fast_path_ok.pop(tpl_name, None)
             _backend._compiled_templates.pop(tpl_name, None)
+
+
+# --- Bug regression tests ---
+
+
+class TestBugAutoCompiledSafeStringValue:
+    """B1: Auto-compiled templates must not double-escape SafeString values.
+
+    When a widget value is a SafeString (e.g., pre-escaped HTML), the
+    auto-compiled OP_VAR_STR path (used for ``|stringformat:'s'``) must
+    preserve the SafeData nature and skip HTML-escaping — exactly like
+    stock Django's template rendering does.
+    """
+
+    def test_safestring_value_not_double_escaped(self, stock_renderer, fast_renderer):
+        """SafeString value containing HTML should pass through unescaped."""
+        engine = fast_renderer.engine
+        tpl = engine.get_template("django/forms/widgets/input.html").template
+        ops = try_compile_widget_template(tpl)
+        assert ops is not None
+
+        w = forms.TextInput()
+        # A SafeString value with HTML — should NOT be escaped
+        ctx = w.get_context("f", SafeString("<b>bold</b>"), {"id": "id_f"})
+
+        auto = exec_compiled_template(ops, ctx)
+        stock = stock_renderer.render(w.template_name, ctx).strip()
+
+        # The SafeString should appear unescaped in both
+        assert "<b>bold</b>" in stock, f"stock escaped SafeString: {stock!r}"
+        assert "<b>bold</b>" in auto, f"auto-compiled escaped SafeString: {auto!r}"
+        assert auto == stock
+
+    def test_safestring_value_with_entities(self, stock_renderer, fast_renderer):
+        """SafeString with pre-escaped entities must not be double-escaped."""
+        engine = fast_renderer.engine
+        tpl = engine.get_template("django/forms/widgets/input.html").template
+        ops = try_compile_widget_template(tpl)
+
+        w = forms.TextInput()
+        # Pre-escaped entity — &amp; should stay as &amp;, not become &amp;amp;
+        ctx = w.get_context("f", SafeString("Tom &amp; Jerry"), {"id": "id_f"})
+
+        auto = exec_compiled_template(ops, ctx)
+        stock = stock_renderer.render(w.template_name, ctx).strip()
+        assert auto == stock
+
+
+class TestBugAttrNameEscaping:
+    """B4: Widget attribute names must be HTML-escaped in the fast path.
+
+    Stock Django's attrs.html template renders ``{{ name }}`` with
+    autoescape=True, which escapes HTML special characters in attribute
+    names. The hardcoded ``_build_attrs_html`` must do the same.
+    """
+
+    def test_attr_name_with_quotes(self, stock_renderer, fast_renderer):
+        """Attribute name containing a double-quote must be escaped."""
+        w = forms.TextInput()
+        ctx = w.get_context("f", "val", {"id": "id_f", 'x"y': "test"})
+        stock = stock_renderer.render(w.template_name, ctx).strip()
+        fast = fast_renderer.render(w.template_name, ctx)
+        assert fast == stock
+        # The " in the attr name should be escaped
+        assert "&quot;" in fast or "&#x27;" in fast or "x&quot;y" in fast
+
+    def test_attr_name_with_angle_brackets(self, stock_renderer, fast_renderer):
+        """Attribute name containing < or > must be escaped."""
+        w = forms.TextInput()
+        ctx = w.get_context("f", "val", {"id": "id_f", "x<y": "test"})
+        stock = stock_renderer.render(w.template_name, ctx).strip()
+        fast = fast_renderer.render(w.template_name, ctx)
+        assert fast == stock
+
+    def test_normal_data_attrs_unaffected(self, stock_renderer, fast_renderer):
+        """Normal data-* and aria-* attrs should work as before."""
+        w = forms.TextInput()
+        ctx = w.get_context("f", "val", {"id": "id_f", "data-custom": "value", "aria-label": "test"})
+        stock = stock_renderer.render(w.template_name, ctx).strip()
+        fast = fast_renderer.render(w.template_name, ctx)
+        assert fast == stock
