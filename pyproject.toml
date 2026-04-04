@@ -44,7 +44,7 @@ dev = [
   "pytest-codspeed==4.3.0",
   "pytest-cov==7.1.0",
   "pytest-django==4.12.0",
-  "ruff==0.15.8",
+  "ruff==0.15.9",
 ]
 
 [tool.setuptools.packages.find]
