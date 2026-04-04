@@ -67,7 +67,7 @@ jobs:
         with:
           ref: ${{ github.event.inputs.version && format('v{0}', github.event.inputs.version) || github.ref }}
 
-      - uses: pypa/cibuildwheel@v3.4.0
+      - uses: pypa/cibuildwheel@v3.4.1
 
       - uses: actions/upload-artifact@v7
         with:
