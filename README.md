@@ -5,7 +5,7 @@ Cython-accelerated drop-in replacement for Django's template engine.
 
 This is a benchmarking tool to evaluate what a Cython-level template speedup
 would bring to your project. Not meant for production use. Feel free to try
-though -- if you run into issues, open an issue and I'll see if I can help.
+though — if you run into issues, open an issue and I'll see if I can help.
 
 ## Benchmarks
 
