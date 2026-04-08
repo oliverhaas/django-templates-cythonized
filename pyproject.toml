@@ -1,7 +1,7 @@
 [project]
 name = "django-templates-cythonized"
-version = "0.1.0a1"
-description = "Cython-accelerated drop-in replacement for Django's template engine (3-13x faster)"
+version = "0.1.0"
+description = "Cython-accelerated Django template engine for benchmarking template rendering speedup (3-14x faster)"
 readme = "README.md"
 license = "BSD-3-Clause"
 requires-python = ">=3.12"
@@ -24,7 +24,6 @@ classifiers = [
   "Programming Language :: Python :: 3.14",
   "Topic :: Internet :: WWW/HTTP",
   "Topic :: Software Development :: Libraries",
-  "Typing :: Typed",
 ]
 dependencies = ["Django>=5.2,<7"]
 
@@ -40,7 +39,7 @@ build-backend = "setuptools.build_meta"
 dev = [
   "Cython==3.2.4",
   "pre-commit==4.5.1",
-  "pytest==9.0.2",
+  "pytest==9.0.3",
   "pytest-codspeed==4.3.0",
   "pytest-cov==7.1.0",
   "pytest-django==4.12.0",
@@ -112,12 +111,14 @@ suppress-none-returning = true
 
 [tool.pytest.ini_options]
 DJANGO_SETTINGS_MODULE = "tests.settings"
-addopts = "--cov=django_templates_cythonized --cov-report=term-missing --no-cov-on-fail"
+addopts = "--cov=django_templates_cythonized/loaders --cov-report=term-missing --no-cov-on-fail"
 pythonpath = ["."]
 testpaths = ["tests"]
 xfail_strict = true
 
 [tool.coverage.run]
+# Only loaders/ stay as pure Python; all other .py files compile to .so via
+# Cython and can't be instrumented by coverage.
 omit = ["tests/*"]
 
 [tool.coverage.report]

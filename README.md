@@ -3,8 +3,9 @@
 Cython-accelerated drop-in replacement for Django's template engine.
 **3-14x faster** depending on template complexity.
 
-> **Exploratory** -- if you're looking for a production-proven approach, use
-> Django's built-in engine or [django-rusty-templates](https://github.com/romanroe/django-rusty-templates).
+This is a benchmarking tool to evaluate what a Cython-level template speedup
+would bring to your project. Not meant for production use. Feel free to try
+though -- if you run into issues, open an issue and I'll see if I can help.
 
 ## Benchmarks
 
