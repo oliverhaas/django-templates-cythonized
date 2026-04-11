@@ -35,3 +35,4 @@ site/
 *.c
 django_templates_cythonized/*.html
 django_templates_cythonized/loaders/*.html
+docs/superpowers/
