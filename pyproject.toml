@@ -39,11 +39,11 @@ build-backend = "setuptools.build_meta"
 dev = [
   "Cython==3.2.4",
   "pre-commit==4.6.0",
-  "pytest==9.0.3",
+  "pytest==9.1.1",
   "pytest-codspeed==5.0.3",
   "pytest-cov==7.1.0",
   "pytest-django==4.12.0",
-  "ruff==0.15.17",
+  "ruff==0.15.18",
 ]
 
 [tool.setuptools.packages.find]
