@@ -2675,3 +2675,14 @@ def do_with(parser, token):
     nodelist = parser.parse(("endwith",))
     parser.delete_first_token()
     return WithNode(None, None, nodelist, extra_context=extra_context)
+
+
+try:
+    from django.utils.csp import nonce_attr
+except ImportError:  # Django < 6.1
+    pass
+else:
+
+    @register.simple_tag(takes_context=True)
+    def csp_nonce_attr(context, media=None):
+        return nonce_attr(context, media)
