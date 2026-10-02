@@ -27,12 +27,10 @@ class Variable:
     cython.declare(translate=cython.bint, message_context=object)
 
     @cython.ccall
-    def resolve(self, context):
-        ...
+    def resolve(self, context): ...
 
     @cython.cfunc
-    def _resolve_lookup(self, context) -> object:
-        ...
+    def _resolve_lookup(self, context) -> object: ...
 ```
 
 - `@cython.ccall` → `cpdef` (callable from Python AND C, fast path from Cython code)

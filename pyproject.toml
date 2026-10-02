@@ -61,6 +61,7 @@ fix = true
 select = ["ALL"]
 ignore = [
   "COM812",  # Conflicts with ruff-format
+  "CPY",     # No per-file copyright notices in this project
   "D",       # Docstrings - Django source doesn't follow our style
   "E501",    # Line length handled by config
   "EM",      # Exception strings inline are fine
