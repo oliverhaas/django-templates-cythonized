@@ -1147,7 +1147,7 @@ class Variable:
                                 raise
             return current
 
-        current: object = context
+        current = context
         try:  # catch-all for silent variable failures
             for bit in lookups:
                 try:  # dictionary lookup
@@ -1334,7 +1334,7 @@ class NodeList:
             if n == 1:
                 node = nodes[0]
                 if isinstance(node, TextNode):
-                    tnode: TextNode = node
+                    tnode = node
                     return SafeString(tnode.s)
                 elif isinstance(node, VariableNode):
                     vnode: VariableNode = node
